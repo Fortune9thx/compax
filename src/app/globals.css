@@ -1,0 +1,184 @@
+@import "tailwindcss";
+
+/* ─── COMPASS DESIGN TOKENS — post-reset, authoritative ─────────────────
+   Source: design_handoff_compass/README.md + Compass Design System.dc.html
+   Institutional sans-first. Serif = reasoning accent only (Newsreader italic).
+   Reason cyan is reserved — never decorative.
+──────────────────────────────────────────────────────────────────────── */
+
+:root {
+  --void: #070a12;      /* page background */
+  --panel: #0a0f1a;     /* card background */
+  --depth: #0f1626;     /* atmosphere gradients */
+  --node: #10182a;      /* SVG node fill */
+  --surface: #161e2f;   /* design-system cards */
+
+  --ink: #ecebe6;
+  --ink-60: rgba(236, 235, 230, 0.6);
+  --ink-45: rgba(236, 235, 230, 0.45);
+  --ink-40: rgba(236, 235, 230, 0.4);
+  --hairline: rgba(236, 235, 230, 0.08);
+  --border: rgba(236, 235, 230, 0.1);
+
+  --cyan: #7fd4d4;      /* reason cyan: live intelligence, consensus, primary buttons */
+  --cyan-hover: #a8e6e6;
+  --blue: #4a7dd6;      /* signal blue (sparse) */
+  --green: #6fbf8f;     /* yield positive / agreement */
+  --amber: #d6926a;     /* risk elevated / events / dissent */
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: var(--void);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+a {
+  color: var(--cyan);
+  text-decoration: none;
+}
+a:hover {
+  color: var(--cyan-hover);
+}
+
+/* ─── motion keyframes (verbatim from handoff) ─── */
+@keyframes ceFlow {
+  to { stroke-dashoffset: -96; }
+}
+@keyframes ceReturn {
+  to { stroke-dashoffset: 96; }
+}
+@keyframes cePulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+@keyframes ceScan {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(44px); }
+}
+@keyframes ceTick {
+  0%, 70%, 100% { opacity: 0.25; }
+  80% { opacity: 1; }
+}
+@keyframes ceDrift {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+@keyframes ceRise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes ceConf {
+  from { width: 0; }
+  to { width: 100%; }
+}
+@keyframes ceProp {
+  0% { r: 6; opacity: 0.6; }
+  100% { r: 26; opacity: 0; }
+}
+
+/* ─── hover behaviors (prototype style-hover equivalents) ─── */
+.ce-navlink {
+  color: rgba(236, 235, 230, 0.7);
+  transition: color 0.18s ease-out;
+}
+.ce-navlink:hover {
+  color: var(--ink);
+}
+
+.ce-btn-primary {
+  background: var(--cyan);
+  color: var(--void);
+  border: none;
+  cursor: pointer;
+  transition: background 0.18s ease-out;
+}
+.ce-btn-primary:hover {
+  background: var(--cyan-hover);
+}
+
+.ce-btn-secondary {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid rgba(236, 235, 230, 0.22);
+  cursor: pointer;
+  transition: border-color 0.18s ease-out;
+}
+.ce-btn-secondary:hover {
+  border-color: rgba(236, 235, 230, 0.5);
+}
+
+.ce-card-hover {
+  transition: border-color 0.18s ease-out;
+}
+.ce-card-hover:hover {
+  border-color: rgba(127, 212, 212, 0.4) !important;
+}
+
+.ce-row-hover {
+  transition: background 0.18s ease-out;
+}
+.ce-row-hover:hover {
+  background: rgba(127, 212, 212, 0.04);
+}
+
+/* hero grid collapses below 1100px */
+@media (max-width: 1100px) {
+  .ce-hero-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+/* section 2-col grids collapse below 900px */
+@media (max-width: 900px) {
+  .ce-2col {
+    grid-template-columns: 1fr !important;
+  }
+  .ce-4col {
+    grid-template-columns: 1fr 1fr !important;
+  }
+  .ce-5col {
+    grid-template-columns: 1fr !important;
+  }
+  .ce-3col {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: var(--void);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(236, 235, 230, 0.15);
+  border-radius: 2px;
+}
+
+::selection {
+  background: rgba(127, 212, 212, 0.25);
+  color: var(--ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
