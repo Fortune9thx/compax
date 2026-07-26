@@ -1,4 +1,5 @@
 /* ─── Compass shared UI primitives (post-reset design system) ─── */
+"use client";
 
 export const SANS = "var(--font-sans), 'IBM Plex Sans', sans-serif";
 export const MONO = "var(--font-mono), 'IBM Plex Mono', monospace";
@@ -18,6 +19,7 @@ export function Logo({ size = 24 }: { size?: number }) {
 }
 
 import Link from "next/link";
+import { useWallet } from "@/hooks/useWallet";
 
 const NAV_LINKS = [
   { label: "Overview", href: "/ecosystem" },
@@ -28,7 +30,45 @@ const NAV_LINKS = [
   { label: "Reputation", href: "/reputation" },
 ];
 
-/** Shared sticky app nav: logo, breadcrumb tag, section links, live status. */
+function WalletButton() {
+  const { address, connected, connecting, connect, disconnect } = useWallet();
+  const short = address ? `${address.slice(0, 6)}…${address.slice(-4)}` : null;
+
+  if (connected && short) {
+    return (
+      <button
+        onClick={disconnect}
+        title="Click to disconnect"
+        style={{
+          display: "flex", alignItems: "center", gap: 6,
+          font: `500 11px ${MONO}`, color: "#6fbf8f",
+          background: "rgba(111,191,143,.1)", border: "1px solid rgba(111,191,143,.3)",
+          borderRadius: 6, padding: "5px 12px", cursor: "pointer",
+        }}
+      >
+        <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#6fbf8f", animation: "cePulse 2s infinite", flexShrink: 0 }} />
+        {short}
+      </button>
+    );
+  }
+
+  return (
+    <button
+      onClick={connect}
+      disabled={connecting}
+      style={{
+        font: `500 11px ${MONO}`, color: "#7fd4d4",
+        background: "rgba(127,212,212,.1)", border: "1px solid rgba(127,212,212,.3)",
+        borderRadius: 6, padding: "5px 12px", cursor: connecting ? "not-allowed" : "pointer",
+        opacity: connecting ? 0.6 : 1,
+      }}
+    >
+      {connecting ? "Connecting…" : "Connect Wallet"}
+    </button>
+  );
+}
+
+/** Shared sticky app nav: logo, breadcrumb tag, section links, wallet, live status. */
 export function AppNav({
   tag,
   active,
@@ -62,7 +102,10 @@ export function AppNav({
           )
         )}
       </div>
-      <span style={{ font: `400 10.5px ${MONO}`, color: "#7fd4d4", animation: "cePulse 2s infinite" }}>{status}</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+        <WalletButton />
+        <span style={{ font: `400 10.5px ${MONO}`, color: "#7fd4d4", animation: "cePulse 2s infinite" }}>{status}</span>
+      </div>
     </nav>
   );
 }

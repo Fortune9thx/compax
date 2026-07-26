@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { SANS, MONO, SERIF, AppNav, PulseTicker, panel, monoLabel } from "@/components/compass/ui";
 import { useReputation, useRepHistory, useContractWrite, RepEvent } from "@/hooks/useContract";
+import { useWallet } from "@/hooks/useWallet";
 
 const DEMO_ADDRESS = "0x00f42f7ad0edbd0818bd46c8e51cdb5670dde6d9";
 
@@ -28,7 +29,14 @@ function scoreToStrata(score: { loan_score: number; funding_score: number; predi
 }
 
 export default function ReputationPage() {
+  const { address: walletAddress, connected } = useWallet();
   const [address, setAddress] = useState(DEMO_ADDRESS);
+
+  // Auto-populate with connected wallet address
+  useEffect(() => {
+    if (connected && walletAddress) setAddress(walletAddress);
+  }, [connected, walletAddress]);
+
   const { data: score, loading, refetch: refetchScore } = useReputation(address);
   const { data: history, refetch: refetchHistory } = useRepHistory(address);
   const { execute, loading: claiming } = useContractWrite();

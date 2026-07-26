@@ -1,19 +1,23 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { readContract, writeContract } from "@/lib/genlayer";
 import { CONTRACTS } from "@/lib/contracts";
 
-// Generic hook for sequential contract reads (avoids Bradbury rate limits)
+const POLL_INTERVAL = 15_000; // 15 seconds — polite for Bradbury rate limits
+
+// Generic hook for sequential contract reads with real-time polling
 export function useContractRead<T>(
   contract: keyof typeof CONTRACTS,
   method: string,
   args: unknown[] = [],
   fallback: T
-): { data: T; loading: boolean; error: string | null; refetch: () => void } {
+): { data: T; loading: boolean; error: string | null; refetch: () => void; lastUpdated: number | null } {
   const [data, setData] = useState<T>(fallback);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetch = useCallback(async () => {
     setLoading(true);
@@ -26,6 +30,7 @@ export function useContractRead<T>(
         (Array.isArray(result) && result.length === 0) ||
         (typeof result === "object" && !Array.isArray(result) && Object.keys(result as object).length === 0);
       setData(isEmpty ? fallback : result);
+      setLastUpdated(Date.now());
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setData(fallback);
@@ -35,9 +40,13 @@ export function useContractRead<T>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contract, method, JSON.stringify(args)]);
 
-  useEffect(() => { fetch(); }, [fetch]);
+  useEffect(() => {
+    fetch();
+    timerRef.current = setInterval(fetch, POLL_INTERVAL);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [fetch]);
 
-  return { data, loading, error, refetch: fetch };
+  return { data, loading, error, refetch: fetch, lastUpdated };
 }
 
 // Write hook

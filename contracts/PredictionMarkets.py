@@ -3,20 +3,35 @@ from genlayer import *
 import json
 
 
+def _sanitize(s: str, max_len: int = 500) -> str:
+    s = s.replace("{", "").replace("}", "").replace("```", "").replace("\\n", " ")
+    return s[:max_len].strip()
+
+
 class PredictionMarkets(gl.Contract):
-    markets: TreeMap[str, str]       # market_id → JSON
-    stakes: TreeMap[str, str]        # market_id_address → JSON stake
+    markets: TreeMap[str, str]
+    stakes: TreeMap[str, str]
     market_counter: u256
     total_volume: u256
+    _owner: str
 
     def __init__(self) -> None:
         self.markets = TreeMap[str, str]()
         self.stakes = TreeMap[str, str]()
         self.market_counter = u256(0)
         self.total_volume = u256(0)
+        self._owner = str(gl.message.sender_address)
 
     @gl.public.write
     def create_market(self, question: str, resolution_date: str) -> str:
+        # Input sanitization (C2/L1 fix)
+        question = _sanitize(question, 400)
+        resolution_date = _sanitize(resolution_date, 20)
+        if not question:
+            raise gl.vm.UserError("question is required")
+        if not resolution_date:
+            raise gl.vm.UserError("resolution_date is required")
+
         creator = str(gl.message.sender_address)
         market_id = f"MKT-{int(self.market_counter)}"
         self.market_counter = u256(int(self.market_counter) + 1)
@@ -39,20 +54,25 @@ class PredictionMarkets(gl.Contract):
 
     @gl.public.write.payable
     def stake(self, market_id: str, position: str) -> str:
+        market_id = _sanitize(market_id, 20)
         sender = str(gl.message.sender_address)
         amount = int(gl.message.value)
-
+        if amount <= 0:
+            raise gl.vm.UserError("stake amount must be positive")
         if market_id not in self.markets:
-            return "market_not_found"
+            raise gl.vm.UserError("market_not_found")
         m = json.loads(self.markets[market_id])
         if m["status"] != "active":
-            return "market_not_active"
+            raise gl.vm.UserError("market_not_active")
+        position = position.lower().strip()
         if position not in ("yes", "no"):
-            return "invalid_position"
+            raise gl.vm.UserError("position must be 'yes' or 'no'")
 
         stake_key = f"{market_id}_{sender}"
         if stake_key in self.stakes:
             existing = json.loads(self.stakes[stake_key])
+            if existing["position"] != position:
+                raise gl.vm.UserError("cannot_change_position")
             existing["amount"] = existing["amount"] + amount
             self.stakes[stake_key] = json.dumps(existing)
         else:
@@ -68,36 +88,60 @@ class PredictionMarkets(gl.Contract):
 
     @gl.public.write
     def resolve_market(self, market_id: str) -> str:
+        market_id = _sanitize(market_id, 20)
+        # Only creator or contract owner can resolve (H2-equivalent fix)
+        caller = str(gl.message.sender_address)
         if market_id not in self.markets:
-            return "not_found"
+            raise gl.vm.UserError("market_not_found")
         m = json.loads(self.markets[market_id])
         if m["status"] != "active":
-            return "already_resolved"
+            raise gl.vm.UserError("market_already_resolved")
+        if caller != m["creator"] and caller != self._owner:
+            raise gl.vm.UserError("only_creator_or_owner_can_resolve")
 
         _question = m["question"]
         _date = m["resolution_date"]
         _yes = m["total_yes"]
         _no = m["total_no"]
 
+        # Fetch real-world data to ground the resolution (GenLayer thesis)
+        def _fetch_market_context() -> str:
+            r = gl.nondet.web.get(
+                "https://api.coingecko.com/api/v3/simple/price"
+                "?ids=bitcoin,ethereum&vs_currencies=usd&include_24hr_change=true"
+            )
+            return r.body.decode("utf-8")[:600]
+
+        market_context = gl.eq_principle.strict_eq(_fetch_market_context)
+
         result_str = gl.eq_principle.prompt_non_comparative(
             lambda: (
-                f"Resolve this prediction market:\nQuestion: {_question}\n"
-                f"Resolution Date: {_date}\nYES staked: {_yes} cGEN\nNO staked: {_no} cGEN\n\n"
-                f"Return only JSON: {{\"outcome\": \"yes\" or \"no\", \"reasoning\": \"<2-3 sentences>\"}}"
+                f"Resolve this prediction market using your knowledge and current market data.\n"
+                f"[MARKET]\nQuestion: {_question}\nResolution Date: {_date}\n"
+                f"Total YES staked: {_yes} cGEN | Total NO staked: {_no} cGEN\n"
+                f"[LIVE MARKET DATA — CoinGecko]\n{market_context}\n"
+                f"[TASK]\nDetermine whether the question resolves YES or NO.\n"
+                f"Base your decision on factual knowledge and the live market data where relevant.\n"
+                f"Return ONLY valid JSON:\n"
+                f'{{\"outcome\": \"yes\" or \"no\", \"reasoning\": \"<2-3 sentences citing evidence>\"}}'
             ),
-            task="Resolve a binary prediction market question based on available knowledge",
-            criteria="outcome is exactly 'yes' or 'no'. reasoning explains the determination.",
+            task="Resolve a binary prediction market using knowledge and live market data",
+            criteria=(
+                "outcome is exactly the string 'yes' or 'no'. "
+                "reasoning cites factual evidence or market data supporting the decision. "
+                "Decision is logically consistent with the question and available data."
+            ),
         )
 
         try:
             parsed = json.loads(result_str)
-            outcome = str(parsed.get("outcome", "no"))
+            outcome = str(parsed.get("outcome", "no")).lower().strip()
             if outcome not in ("yes", "no"):
                 outcome = "no"
-            reasoning = str(parsed.get("reasoning", ""))
+            reasoning = str(parsed.get("reasoning", ""))[:600]
         except Exception:
             outcome = "no"
-            reasoning = "Unable to determine outcome."
+            reasoning = "Unable to determine outcome from available data."
 
         m["status"] = "resolved"
         m["outcome"] = outcome
