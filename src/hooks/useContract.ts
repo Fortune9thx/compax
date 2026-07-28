@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { readContract, writeContract } from "@/lib/genlayer";
 import { CONTRACTS } from "@/lib/contracts";
+import { _state } from "@/hooks/useWallet";
 
 const POLL_INTERVAL = 15_000; // 15 seconds — polite for Bradbury rate limits
 
@@ -49,7 +50,7 @@ export function useContractRead<T>(
   return { data, loading, error, refetch: fetch, lastUpdated };
 }
 
-// Write hook
+// Write hook — signs via connected MetaMask wallet (client-side, no private key)
 export function useContractWrite() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -61,10 +62,14 @@ export function useContractWrite() {
       args: unknown[] = [],
       value?: bigint
     ) => {
+      const { address, connected } = _state;
+      if (!connected || !address) {
+        throw new Error("Wallet not connected. Please connect MetaMask first.");
+      }
       setLoading(true);
       setError(null);
       try {
-        const result = await writeContract("", CONTRACTS[contract], method, args, value);
+        const result = await writeContract(address, CONTRACTS[contract], method, args, value);
         return result;
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);

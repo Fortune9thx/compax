@@ -28,8 +28,8 @@ const DEFAULT: WalletState = {
   onBradbury: false,
 };
 
-// Singleton wallet state — shared across all hook instances
-let _state: WalletState = DEFAULT;
+// Singleton wallet state — shared across all hook instances (exported for useContractWrite)
+export let _state: WalletState = DEFAULT;
 const _listeners = new Set<() => void>();
 
 function notify() {
