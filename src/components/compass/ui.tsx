@@ -20,6 +20,8 @@ export function Logo({ size = 24 }: { size?: number }) {
 
 import Link from "next/link";
 import { useWallet } from "@/hooks/useWallet";
+import { useAllEvents } from "@/hooks/useContract";
+import type { EventData } from "@/hooks/useContract";
 
 const NAV_LINKS = [
   { label: "Overview", href: "/ecosystem" },
@@ -110,24 +112,53 @@ export function AppNav({
   );
 }
 
-const TICKER = [
-  { text: "◦ 14:02 RATE EVENT DETECTED" },
-  { text: "◉ 14:07 MERIDIAN COUNCIL CONVENED", cyan: true },
-  { text: "◦ 14:11 HARBOR CONSENSUS 6/7" },
-  { text: "◦ 14:14 −12% GROWTH → RESERVES" },
-  { text: "◦ 14:32 DECISION №4,182 RECORDED" },
-  { text: "◉ 14:40 FRONTIER COUNCIL CONVENED", cyan: true },
+const FALLBACK_TICKER = [
+  { text: "◦ COMPASS SYSTEM LIVE", cyan: false },
+  { text: "◉ AWAITING ON-CHAIN EVENTS", cyan: true },
+  { text: "◦ BRADBURY TESTNET CONNECTED", cyan: false },
+  { text: "◉ AI COUNCILS STANDING BY", cyan: true },
 ];
 
-/** System pulse ticker — on every page. */
+function eventToTick(e: EventData): { text: string; cyan: boolean } {
+  const label = e.is_active ? "◉" : "◦";
+  const sev = e.severity >= 7 ? " [HIGH]" : e.severity >= 4 ? " [MED]" : "";
+  return { text: `${label} ${e.event_type.toUpperCase()}${sev} · ${e.name.slice(0, 40)}`, cyan: e.is_active };
+}
+
+/** System pulse ticker — pulls live events from EconomicEvents contract. */
 export function PulseTicker() {
+  const { data: events } = useAllEvents();
+  const ticks = events && events.length > 0
+    ? events.slice(-8).map(eventToTick)
+    : FALLBACK_TICKER;
+  const doubled = [...ticks, ...ticks];
+
   return (
     <div style={{ borderBottom: "1px solid rgba(236,235,230,.08)", padding: "10px 0", overflow: "hidden", background: "rgba(15,22,38,.6)" }}>
       <div style={{ display: "inline-flex", gap: 44, whiteSpace: "nowrap", font: `400 11px ${MONO}`, color: "rgba(236,235,230,.55)", animation: "ceDrift 22s linear infinite" }}>
-        {[...TICKER, ...TICKER].map((t, i) => (
+        {doubled.map((t, i) => (
           <span key={i} style={t.cyan ? { color: "#7fd4d4" } : undefined}>{t.text}</span>
         ))}
       </div>
+    </div>
+  );
+}
+
+/** Bradbury congestion / contract-not-found error notice */
+export function NetworkError({ error }: { error: string | null }) {
+  if (!error) return null;
+  const isCongestion = error.includes("contract not found") || error.includes("not found") || error.includes("timeout");
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: 10,
+      padding: "10px 16px", margin: "0 40px 0",
+      borderRadius: 7, font: `400 11px ${MONO}`,
+      background: isCongestion ? "rgba(214,146,106,.08)" : "rgba(214,146,106,.12)",
+      border: `1px solid rgba(214,146,106,.25)`,
+      color: "#d6926a",
+    }}>
+      <span>◦</span>
+      <span>{isCongestion ? "Bradbury node syncing — data will appear once state propagates (~30 min after deploy)" : error}</span>
     </div>
   );
 }
