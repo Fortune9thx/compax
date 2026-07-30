@@ -3,6 +3,14 @@ from genlayer import *
 import json
 
 
+@gl.evm.contract_interface
+class _Recipient:
+    class View:
+        pass
+    class Write:
+        pass
+
+
 def _sanitize(s: str, max_len: int = 500) -> str:
     for ch in ("{", "}", "[", "]", "`", '"', "#"):
         s = s.replace(ch, "")
@@ -21,6 +29,19 @@ class BuilderFunding(gl.Contract):
         self.project_counter = u256(0)
         self.total_allocated = u256(0)
         self._owner = str(gl.message.sender_address)
+
+    @gl.public.write.payable
+    def fund_pool(self) -> str:
+        """Owner tops up the grants pool with real GEN — the capital projects are funded from."""
+        if str(gl.message.sender_address) != self._owner:
+            raise gl.vm.UserError("unauthorized: owner only")
+        if int(gl.message.value) <= 0:
+            raise gl.vm.UserError("send some value")
+        return "funded"
+
+    @gl.public.view
+    def get_pool_balance(self) -> int:
+        return int(self.balance)
 
     @gl.public.write
     def submit_project(self, name: str, description: str, funding_requested: u256,
@@ -90,6 +111,19 @@ class BuilderFunding(gl.Contract):
             reasoning = "Unable to evaluate request."
             conditions = ""
 
+        # Solvency gate: cap disbursement at what the pool can actually cover.
+        # A partial-liquidity case is recorded as "partial" even if the AI said
+        # "funded", so the stored status always matches what was really sent.
+        pool_balance = int(self.balance)
+        if allocated > pool_balance:
+            reasoning = (reasoning + f" Capped by pool liquidity ({pool_balance} cGEN available, "
+                         f"{allocated} decided).").strip()
+            allocated = pool_balance
+            if allocated == 0:
+                decision = "rejected"
+            elif allocated < _requested:
+                decision = "partial"
+
         project = json.dumps({
             "id": project_id,
             "applicant": applicant,
@@ -105,9 +139,11 @@ class BuilderFunding(gl.Contract):
             "submitted_at": "",
             "decided_at": "",
         })
+        # CEI: record state before the external disbursement
         self.projects[project_id] = project
         if allocated > 0:
             self.total_allocated = u256(int(self.total_allocated) + allocated)
+            _Recipient(Address(applicant)).emit_transfer(value=u256(allocated))
         return project_id
 
     @gl.public.write.payable

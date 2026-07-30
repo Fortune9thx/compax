@@ -31,7 +31,7 @@ This is not a demo. It is a functioning Bradbury testnet application. The intell
 │      useContract.ts — typed reads/writes per contract         │
 ├─────────────────────────────────────────────────────────────┤
 │                 CLIENT-SIDE SIGNING                            │
-│    src/lib/genlayer.ts — genlayer-js + connected MetaMask     │
+│  src/lib/genlayer.ts — genlayer-js + any EIP-6963 wallet      │
 │    Every write is signed by the user's own wallet.            │
 ├─────────────────────────────────────────────────────────────┤
 │              GENLAYER BRADBURY TESTNET                         │
@@ -61,6 +61,71 @@ Every contract uses `gl.eq_principle.prompt_non_comparative` (or `strict_eq` for
 | **StakingReserve** | The reserve backing `allocation_staking` | Assigns per-position yield band + validator tier from live market context |
 
 All 7 contracts are independent — none take constructor arguments and none call each other. Current addresses live in [`src/lib/contracts.ts`](src/lib/contracts.ts).
+
+---
+
+## Liquidity & settlement
+
+Every write that should move real value actually moves real value — no contract silently pretends to disburse or repay. That took two separate fixes to get right, worth explaining honestly rather than glossing over.
+
+### How a payout actually happens
+
+Sending native GEN out of a GenLayer intelligent contract isn't automatic — it requires declaring a small interface stub and calling a transfer through it:
+
+```python
+@gl.evm.contract_interface
+class _Recipient:
+    class View:
+        pass
+    class Write:
+        pass
+
+# ...inside a write method:
+_Recipient(Address(recipient_address)).emit_transfer(value=u256(amount))
+```
+
+This is GenLayer's documented pattern for sending to an externally-owned address ([Value Transfers](https://docs.genlayer.com/developers/intelligent-contracts/advanced-features/value-transfers)) — an early draft of `VaultManager.withdraw` called this without declaring the interface first, which is a plain `NameError`, not a platform limitation. Once verified against the docs and fixed, four methods now use it for real payouts, and each is bounds-checked so it can only ever send value the contract is actually holding:
+
+| Method | Pays out | Bounded by |
+|---|---|---|
+| `VaultManager.withdraw` | A depositor's withdrawal | That vault's own tracked treasury (sum of its deposits) |
+| `StakingReserve.unstake` | A staker's principal | That position's staked amount |
+| `PredictionMarkets.claim_winnings` | A winner's stake + proportional share of the losing pool | Total staked on both sides of that market |
+| `LendingMarket.request_loan` / `BuilderFunding.submit_project` | An approved loan or grant | The contract's own pool balance (`get_pool_balance`) — see below |
+
+### The cGEN pool: what it is and why
+
+`LendingMarket` and `BuilderFunding` don't hold value because users deposited it (unlike vaults, staking, or prediction markets) — someone has to put capital in before the AI can approve anything against it. Since Bradbury is testnet and Compax controls the deployer account, both contracts have a `fund_pool()` method, owner-gated, that lets us top them up with real testnet GEN. Both pools were seeded with 100,000 cGEN on deploy.
+
+The disbursement logic is a **solvency gate**, not a suggestion: the AI evaluates a loan or proposal on its merits exactly as before, but the contract itself checks `int(self.balance)` against the requested amount right before recording the decision. If the pool can't cover what was approved, the stored outcome is downgraded — a would-be "approved" loan becomes "rejected," a would-be "funded" grant becomes "partial" or "rejected" — so what's written onchain always matches what was actually paid out. Nothing is ever recorded as approved with no capital behind it.
+
+```python
+pool_balance = int(self.balance)
+if approved and _amount > pool_balance:
+    approved = False   # AI said yes, pool says no — pool wins
+```
+
+### What this is honestly — and isn't
+
+This is a correct, solvency-safe settlement layer for a **testnet demonstration**. It is not yet a decentralized lending market, and calling it one on mainnet would be misleading. Specifically, as of this design:
+
+- **The pool is centralized.** It's funded by one owner-controlled EOA, not by permissionless liquidity providers who earn yield for supplying capital. On mainnet, "the pool" would just be the team's money, not a market.
+- **Loans are unsecured, with no enforced consequence for default.** `repay_loan` and `repay_funding` are voluntary — nothing locks collateral, and nothing liquidates or penalizes a borrower who simply never calls them. `ReputationSystem` could reflect a default, but that call isn't wired anywhere yet (no contract in this app calls another contract).
+- **Interest is decorative right now.** `LendingMarket` stores an AI-set `interest_rate_bps` per loan, but `repay_loan` only requires repaying the principal (`repay_value >= l["amount"]`) — the rate isn't actually collected. It reads as real APR in the UI; today it isn't charged.
+- **Rates aren't market-derived.** The AI sets a rate/allocation per request by reasoning over live market data, not from a supply/utilization curve the way a real money market (Aave-style) prices credit.
+
+### What would need to change for mainnet
+
+In rough order of how load-bearing they are:
+
+1. **Collateral or enforceable credit risk.** Either require locked collateral (over-collateralized, standard DeFi pattern) or build real recourse for under-collateralized lending — automatic reputation slashing, a liquidation path, or both. Reasoning about risk is not the same as bearing consequences for being wrong.
+2. **Actually collect interest.** `repay_loan` needs to require principal + accrued interest, not just principal, and that interest needs to flow somewhere — back into the pool (compounding it for future borrowers) is the simplest version.
+3. **Decentralize the pool.** Replace the single owner `fund_pool()` with permissionless LP deposits that mint a claim on the pool (a share, not a fixed loan), with yield distributed from collected interest. This turns "the pool" into an actual market instead of a treasury we personally top up.
+4. **Wire the reputation loop.** `ReputationSystem.record_loan_repayment` / `record_funding_repayment` exist and already reason about severity — they just need to actually be called (from a keeper, or from the repay/default path itself) so reputation reflects real behavior automatically instead of never firing.
+5. **Rate curves, not rate guesses.** Once there's real utilization (pool borrowed / pool supplied), rates should respond to that mechanically, with the AI's live-market reasoning as a secondary adjustment on top — not the sole input.
+6. **An actual audit.** None of this has been reviewed by anyone but the person who wrote it. Before real value touches any of these contracts, that has to happen.
+
+None of this is a criticism of the current build for what it's for — it's an accurate settlement layer for a testnet demo of AI-reasoned finance, and every payout it makes is provably bounded by real value the contract holds. It just isn't, and shouldn't be presented as, a production lending protocol yet.
 
 ---
 
@@ -188,10 +253,11 @@ src/
 │   └── primitives.tsx          # PageHead, StatTile, Panel, EmptyState, Tag
 ├── hooks/
 │   ├── useContract.ts          # Typed hooks for all 7 contracts
-│   └── useWallet.ts            # MetaMask connect/chain-switch/account tracking
+│   └── useWallet.ts            # EIP-6963 multi-wallet connect/chain-switch/account tracking
 ├── lib/
 │   ├── contracts.ts            # Deployed contract addresses
-│   └── genlayer.ts             # Read/write client wrappers (client-side signing)
+│   ├── genlayer.ts             # Read/write client wrappers (client-side signing)
+│   └── walletProviders.ts      # EIP-6963 wallet discovery
 contracts/
 ├── VaultManager.py
 ├── LendingMarket.py
@@ -205,7 +271,9 @@ keeper/
 └── cycle.mjs                   # Autonomous allocation heartbeat
 deploy/
 ├── deploy.mjs                  # Deploy all 7 contracts
-└── redeploy-fixed.mjs          # Redeploy VaultManager + ReputationSystem
+├── redeploy-fixed.mjs          # Redeploy VaultManager + ReputationSystem
+├── redeploy-settlement.mjs     # Redeploy VaultManager + StakingReserve + PredictionMarkets
+└── redeploy-liquidity.mjs      # Redeploy + fund LendingMarket + BuilderFunding pools
 ```
 
 ---

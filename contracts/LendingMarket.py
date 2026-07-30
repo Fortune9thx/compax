@@ -3,6 +3,14 @@ from genlayer import *
 import json
 
 
+@gl.evm.contract_interface
+class _Recipient:
+    class View:
+        pass
+    class Write:
+        pass
+
+
 def _sanitize(s: str, max_len: int = 500) -> str:
     for ch in ("{", "}", "[", "]", "`", '"', "#"):
         s = s.replace(ch, "")
@@ -23,6 +31,19 @@ class LendingMarket(gl.Contract):
         self.total_borrowed = u256(0)
         self.total_repaid = u256(0)
         self._owner = str(gl.message.sender_address)
+
+    @gl.public.write.payable
+    def fund_pool(self) -> str:
+        """Owner tops up the lending pool with real GEN — the capital loans are disbursed from."""
+        if str(gl.message.sender_address) != self._owner:
+            raise gl.vm.UserError("unauthorized: owner only")
+        if int(gl.message.value) <= 0:
+            raise gl.vm.UserError("send some value")
+        return "funded"
+
+    @gl.public.view
+    def get_pool_balance(self) -> int:
+        return int(self.balance)
 
     @gl.public.write
     def request_loan(self, amount: u256, duration_days: u256, purpose: str, description: str) -> str:
@@ -91,6 +112,15 @@ class LendingMarket(gl.Contract):
             risk_score = 50
             reasoning = "Unable to evaluate request."
 
+        # Solvency gate: the council can only approve what the pool can actually
+        # disburse. An AI approval the pool can't cover is downgraded to rejected
+        # rather than recorded as approved with no capital behind it.
+        pool_balance = int(self.balance)
+        if approved and _amount > pool_balance:
+            approved = False
+            reasoning = (reasoning + " Approved by risk criteria but rejected for insufficient pool liquidity "
+                         f"({pool_balance} cGEN available, {_amount} requested).").strip()
+
         status = "approved" if approved else "rejected"
         loan = json.dumps({
             "id": loan_id,
@@ -107,9 +137,11 @@ class LendingMarket(gl.Contract):
             "requested_at": "",
             "due_at": "",
         })
+        # CEI: record state before the external disbursement
         self.loans[loan_id] = loan
         if approved:
             self.total_borrowed = u256(int(self.total_borrowed) + _amount)
+            _Recipient(Address(borrower)).emit_transfer(value=u256(_amount))
         return loan_id
 
     @gl.public.write.payable

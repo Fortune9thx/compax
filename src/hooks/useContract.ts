@@ -136,12 +136,18 @@ export function useTotalBorrowed() {
 export function useLoanCount() {
   return useContractRead<number>("LendingMarket", "get_loan_count", [], 0);
 }
+export function useLendingPoolBalance() {
+  return useContractRead<number>("LendingMarket", "get_pool_balance", [], 0);
+}
 
 export function useAllProjects() {
   return useContractRead<ProjectData[]>("BuilderFunding", "get_all_projects", [], []);
 }
 export function useTotalAllocated() {
   return useContractRead<number>("BuilderFunding", "get_total_allocated", [], 0);
+}
+export function useBuilderPoolBalance() {
+  return useContractRead<number>("BuilderFunding", "get_pool_balance", [], 0);
 }
 
 export function useAllMarkets() {

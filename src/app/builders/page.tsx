@@ -4,7 +4,7 @@ import { useState } from "react";
 import { AppShell } from "@/components/compax/AppShell";
 import { PageHead, StatTile, Panel, EmptyState, Tag } from "@/components/compax/primitives";
 import { TxStatus, useTxStatus } from "@/components/compax/TxStatus";
-import { useAllProjects, useTotalAllocated, useContractWrite, type ProjectData } from "@/hooks/useContract";
+import { useAllProjects, useTotalAllocated, useBuilderPoolBalance, useContractWrite, type ProjectData } from "@/hooks/useContract";
 
 function statusTone(s: string) {
   return s === "funded" || s === "completed" ? "active" : s === "partial" ? "standard" : "provisional";
@@ -13,6 +13,7 @@ function statusTone(s: string) {
 export default function BuildersPage() {
   const { data: projects, loading, error, refetch } = useAllProjects();
   const { data: totalAllocated } = useTotalAllocated();
+  const { data: poolBalance } = useBuilderPoolBalance();
   const { execute, loading: writing } = useContractWrite();
   const { tx, run, reset } = useTxStatus();
 
@@ -44,7 +45,8 @@ export default function BuildersPage() {
         meta={`${projects.length} proposals`}
       />
 
-      <div className="ce-grid" style={{ gridTemplateColumns: "repeat(3, 1fr) auto", alignItems: "center", marginBottom: 28 }}>
+      <div className="ce-grid" style={{ gridTemplateColumns: "repeat(4, 1fr) auto", alignItems: "center", marginBottom: 28 }}>
+        <StatTile label="Pool available" value={poolBalance.toLocaleString()} unit="cGEN" hint="caps what can be funded" />
         <StatTile label="Total allocated" value={totalAllocated.toLocaleString()} unit="cGEN" />
         <StatTile label="Proposals" value={projects.length} />
         <StatTile label="Funded" value={projects.filter((p) => p.status === "funded" || p.status === "partial" || p.status === "completed").length} />

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { AppShell } from "@/components/compax/AppShell";
 import { PageHead, StatTile, Panel, EmptyState, Tag } from "@/components/compax/primitives";
 import { TxStatus, useTxStatus } from "@/components/compax/TxStatus";
-import { useAllLoans, useTotalBorrowed, useLoanCount, useContractWrite, type LoanData } from "@/hooks/useContract";
+import { useAllLoans, useTotalBorrowed, useLoanCount, useLendingPoolBalance, useContractWrite, type LoanData } from "@/hooks/useContract";
 
 function statusTone(s: string) {
   return s === "approved" ? "active" : s === "repaid" ? "standard" : "provisional";
@@ -14,6 +14,7 @@ export default function LendingPage() {
   const { data: loans, loading, error, refetch } = useAllLoans();
   const { data: totalBorrowed } = useTotalBorrowed();
   const { data: loanCount } = useLoanCount();
+  const { data: poolBalance } = useLendingPoolBalance();
   const { execute, loading: writing } = useContractWrite();
   const { tx, run, reset } = useTxStatus();
 
@@ -43,7 +44,8 @@ export default function LendingPage() {
         meta={`${loans.length} active lines`}
       />
 
-      <div className="ce-grid" style={{ gridTemplateColumns: "repeat(3, 1fr)", marginBottom: 28 }}>
+      <div className="ce-grid" style={{ gridTemplateColumns: "repeat(4, 1fr)", marginBottom: 28 }}>
+        <StatTile label="Pool available" value={poolBalance.toLocaleString()} unit="cGEN" hint="caps what can be approved" />
         <StatTile label="Total deployed" value={totalBorrowed.toLocaleString()} unit="cGEN" />
         <StatTile label="Loans on book" value={loanCount} />
         <StatTile label="Active lines" value={loans.length} />
