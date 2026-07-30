@@ -60,12 +60,14 @@ export async function writeContract(
   contractAddress: string,
   functionName: string,
   args: unknown[] = [],
-  value?: bigint
+  value?: bigint,
+  provider?: unknown
 ): Promise<{ txHash: string; result: unknown }> {
-  if (typeof window === "undefined" || !window.ethereum) {
-    throw new Error("No wallet detected. Please install MetaMask and connect.");
+  const activeProvider = provider ?? (typeof window !== "undefined" ? window.ethereum : undefined);
+  if (!activeProvider) {
+    throw new Error("No wallet connected. Connect a wallet first.");
   }
-  const client = await getWriteClient(window.ethereum, address);
+  const client = await getWriteClient(activeProvider, address);
   const hash = await client.writeContract({
     address: contractAddress as `0x${string}`,
     functionName,

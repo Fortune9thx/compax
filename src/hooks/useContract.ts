@@ -62,14 +62,14 @@ export function useContractWrite() {
       args: unknown[] = [],
       value?: bigint
     ) => {
-      const { address, connected } = _state;
+      const { address, connected, provider } = _state;
       if (!connected || !address) {
-        throw new Error("Wallet not connected. Please connect MetaMask first.");
+        throw new Error("Wallet not connected. Connect a wallet first.");
       }
       setLoading(true);
       setError(null);
       try {
-        const result = await writeContract(address, CONTRACTS[contract], method, args, value);
+        const result = await writeContract(address, CONTRACTS[contract], method, args, value, provider ?? undefined);
         return result;
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -152,6 +152,14 @@ export function useActiveMarkets() {
 }
 export function useTotalVolume() {
   return useContractRead<number>("PredictionMarkets", "get_total_volume", [], 0);
+}
+export function useMarketStake(marketId: string, address: string) {
+  return useContractRead<{ position?: string; amount?: number; claimed?: boolean }>(
+    "PredictionMarkets",
+    "get_user_stake",
+    [marketId, address],
+    {},
+  );
 }
 
 export function useAllStakes() {

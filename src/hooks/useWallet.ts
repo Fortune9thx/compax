@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { getWallets, subscribeWallets, type DiscoveredWallet, type EIP1193Provider } from "@/lib/walletProviders";
 
 const BRADBURY_CHAIN = {
-  chainId: "0x107D",  // 4221 in hex
+  chainId: "0x107D", // 4221 in hex
   chainName: "GenLayer Bradbury Testnet",
   nativeCurrency: { name: "GEN", symbol: "GEN", decimals: 18 },
   rpcUrls: ["https://rpc-bradbury.genlayer.com"],
@@ -17,6 +18,8 @@ export type WalletState = {
   error: string | null;
   chainId: string | null;
   onBradbury: boolean;
+  walletName: string | null;
+  provider: EIP1193Provider | null;
 };
 
 const DEFAULT: WalletState = {
@@ -26,6 +29,8 @@ const DEFAULT: WalletState = {
   error: null,
   chainId: null,
   onBradbury: false,
+  walletName: null,
+  provider: null,
 };
 
 // Singleton wallet state — shared across all hook instances (exported for useContractWrite)
@@ -41,27 +46,18 @@ function setState(patch: Partial<WalletState>) {
   notify();
 }
 
-declare global {
-  interface Window {
-    ethereum?: {
-      request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
-      on: (event: string, handler: (...args: unknown[]) => void) => void;
-      removeListener: (event: string, handler: (...args: unknown[]) => void) => void;
-      isMetaMask?: boolean;
-    };
-  }
-}
+// Event listeners are attached to whichever provider the user actually picked,
+// not blindly to window.ethereum — otherwise a second injected wallet's events
+// never reach the app.
+let _listenerCleanup: (() => void) | null = null;
 
-// Wire up MetaMask event listeners once
-let _listenersAttached = false;
-function attachMetaMaskListeners() {
-  if (_listenersAttached || typeof window === "undefined" || !window.ethereum) return;
-  _listenersAttached = true;
+function attachProviderListeners(provider: EIP1193Provider) {
+  _listenerCleanup?.();
 
   const onAccountsChanged = (accounts: unknown) => {
     const accs = accounts as string[];
     if (!accs || accs.length === 0) {
-      setState({ address: null, connected: false });
+      setState({ ...DEFAULT });
     } else {
       setState({ address: accs[0], connected: true });
     }
@@ -72,78 +68,112 @@ function attachMetaMaskListeners() {
     setState({ chainId: id, onBradbury: id === BRADBURY_CHAIN.chainId });
   };
 
-  window.ethereum.on("accountsChanged", onAccountsChanged);
-  window.ethereum.on("chainChanged", onChainChanged);
+  provider.on("accountsChanged", onAccountsChanged);
+  provider.on("chainChanged", onChainChanged);
+  _listenerCleanup = () => {
+    provider.removeListener("accountsChanged", onAccountsChanged);
+    provider.removeListener("chainChanged", onChainChanged);
+  };
+}
+
+async function switchToBradbury(provider: EIP1193Provider) {
+  try {
+    await provider.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: BRADBURY_CHAIN.chainId }],
+    });
+  } catch (switchError: unknown) {
+    if ((switchError as { code?: number }).code === 4902) {
+      await provider.request({
+        method: "wallet_addEthereumChain",
+        params: [BRADBURY_CHAIN],
+      });
+    } else {
+      throw switchError;
+    }
+  }
+}
+
+const LAST_WALLET_KEY = "compax:lastWalletRdns";
+let _restoreAttempted = false;
+
+async function tryRestoreSession(wallets: DiscoveredWallet[]) {
+  if (_restoreAttempted || _state.connected || typeof window === "undefined") return;
+  const lastRdns = window.localStorage.getItem(LAST_WALLET_KEY);
+  if (!lastRdns) return;
+  const match = wallets.find((w) => w.rdns === lastRdns);
+  if (!match) return;
+  _restoreAttempted = true;
+
+  try {
+    const accounts = (await match.provider.request({ method: "eth_accounts" })) as string[];
+    if (!accounts || accounts.length === 0) return;
+    const chainId = (await match.provider.request({ method: "eth_chainId" })) as string;
+    attachProviderListeners(match.provider);
+    setState({
+      address: accounts[0],
+      connected: true,
+      chainId,
+      onBradbury: chainId === BRADBURY_CHAIN.chainId,
+      walletName: match.name,
+      provider: match.provider,
+    });
+  } catch {
+    // silent — user will just see "Connect wallet"
+  }
 }
 
 export function useWallet() {
   const [, forceUpdate] = useState(0);
+  const [wallets, setWallets] = useState<DiscoveredWallet[]>([]);
 
   useEffect(() => {
     const update = () => forceUpdate((n) => n + 1);
     _listeners.add(update);
-    attachMetaMaskListeners();
 
-    // Restore session if already connected
-    if (!_state.connected && typeof window !== "undefined" && window.ethereum) {
-      window.ethereum
-        .request({ method: "eth_accounts" })
-        .then((accounts) => {
-          const accs = accounts as string[];
-          if (accs && accs.length > 0) {
-            window.ethereum!.request({ method: "eth_chainId" }).then((chainId) => {
-              const id = chainId as string;
-              setState({
-                address: accs[0],
-                connected: true,
-                chainId: id,
-                onBradbury: id === BRADBURY_CHAIN.chainId,
-              });
-            });
-          }
-        })
-        .catch(() => {});
-    }
+    const unsubscribe = subscribeWallets(() => {
+      const list = getWallets();
+      setWallets(list);
+      tryRestoreSession(list);
+    });
+    const initial = getWallets();
+    setWallets(initial);
+    tryRestoreSession(initial);
 
-    return () => { _listeners.delete(update); };
+    return () => {
+      _listeners.delete(update);
+      unsubscribe();
+    };
   }, []);
 
-  const connect = useCallback(async () => {
-    if (typeof window === "undefined" || !window.ethereum) {
-      setState({ error: "MetaMask not detected. Install MetaMask to connect." });
+  const connect = useCallback(async (uuid?: string) => {
+    const available = getWallets();
+    if (available.length === 0) {
+      setState({ error: "No EVM wallet detected. Install MetaMask, Rabby, Coinbase Wallet, or another browser wallet." });
       return;
     }
+    const chosen = uuid ? available.find((w) => w.uuid === uuid) : available[0];
+    if (!chosen) {
+      setState({ error: "Selected wallet is no longer available." });
+      return;
+    }
+
     setState({ connecting: true, error: null });
     try {
-      const accounts = (await window.ethereum.request({
-        method: "eth_requestAccounts",
-      })) as string[];
+      const accounts = (await chosen.provider.request({ method: "eth_requestAccounts" })) as string[];
+      await switchToBradbury(chosen.provider);
+      const chainId = (await chosen.provider.request({ method: "eth_chainId" })) as string;
 
-      // Switch to or add Bradbury network
-      try {
-        await window.ethereum.request({
-          method: "wallet_switchEthereumChain",
-          params: [{ chainId: BRADBURY_CHAIN.chainId }],
-        });
-      } catch (switchError: unknown) {
-        // Chain not added yet — add it
-        if ((switchError as { code?: number }).code === 4902) {
-          await window.ethereum.request({
-            method: "wallet_addEthereumChain",
-            params: [BRADBURY_CHAIN],
-          });
-        } else {
-          throw switchError;
-        }
-      }
-
-      const chainId = (await window.ethereum.request({ method: "eth_chainId" })) as string;
+      attachProviderListeners(chosen.provider);
+      if (typeof window !== "undefined") window.localStorage.setItem(LAST_WALLET_KEY, chosen.rdns);
       setState({
         address: accounts[0],
         connected: true,
         connecting: false,
         chainId,
         onBradbury: chainId === BRADBURY_CHAIN.chainId,
+        walletName: chosen.name,
+        provider: chosen.provider,
         error: null,
       });
     } catch (e) {
@@ -155,8 +185,11 @@ export function useWallet() {
   }, []);
 
   const disconnect = useCallback(() => {
+    _listenerCleanup?.();
+    _listenerCleanup = null;
+    if (typeof window !== "undefined") window.localStorage.removeItem(LAST_WALLET_KEY);
     setState({ ...DEFAULT });
   }, []);
 
-  return { ..._state, connect, disconnect };
+  return { ..._state, wallets, connect, disconnect };
 }

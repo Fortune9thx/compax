@@ -8,6 +8,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
 
 /** The mark: four allocation lanes on an angled plane — the same four-sector
@@ -38,21 +39,95 @@ const NAV = [
 ];
 
 function RailWallet() {
-  const { address, connected, connecting, connect, disconnect } = useWallet();
+  const { address, connected, connecting, wallets, walletName, connect, disconnect, error } = useWallet();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
   const short = address ? `${address.slice(0, 6)}…${address.slice(-4)}` : null;
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onClick = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [menuOpen]);
 
   if (connected && short) {
     return (
-      <button onClick={disconnect} title="Disconnect" className="ce-rail-wallet ce-connected">
+      <button onClick={disconnect} title={`Disconnect ${walletName ?? "wallet"}`} className="ce-rail-wallet ce-connected">
         <span className="ce-dot" />
         {short}
       </button>
     );
   }
+
+  const onClickConnect = () => {
+    if (wallets.length > 1) {
+      setMenuOpen((v) => !v);
+    } else {
+      connect(wallets[0]?.uuid);
+    }
+  };
+
   return (
-    <button onClick={connect} disabled={connecting} className="ce-rail-wallet">
-      {connecting ? "Connecting…" : "Connect wallet"}
-    </button>
+    <div ref={rootRef} style={{ position: "relative" }}>
+      <button onClick={onClickConnect} disabled={connecting} className="ce-rail-wallet">
+        {connecting ? "Connecting…" : "Connect wallet"}
+      </button>
+      {error && !menuOpen && (
+        <div className="ce-mono" style={{ position: "absolute", top: "100%", right: 0, marginTop: 6, fontSize: 10.5, color: "var(--clay)", maxWidth: 220, textAlign: "right" }}>
+          {error}
+        </div>
+      )}
+      {menuOpen && (
+        <div
+          style={{
+            position: "absolute",
+            top: "100%",
+            right: 0,
+            marginTop: 8,
+            minWidth: 200,
+            background: "var(--surface)",
+            border: "1px solid var(--line)",
+            borderRadius: 10,
+            boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
+            overflow: "hidden",
+            zIndex: 50,
+          }}
+        >
+          <div className="ce-section-label" style={{ padding: "10px 14px 6px" }}>Choose a wallet</div>
+          {wallets.map((w) => (
+            <button
+              key={w.uuid}
+              onClick={() => { setMenuOpen(false); connect(w.uuid); }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                width: "100%",
+                padding: "10px 14px",
+                background: "transparent",
+                border: "none",
+                borderTop: "1px solid var(--line-soft)",
+                color: "var(--text)",
+                fontSize: 13,
+                textAlign: "left",
+                cursor: "pointer",
+              }}
+            >
+              {w.icon ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={w.icon} alt="" width={18} height={18} style={{ borderRadius: 4, flex: "none" }} />
+              ) : (
+                <span style={{ width: 18, height: 18, borderRadius: 4, background: "var(--raised)", flex: "none" }} />
+              )}
+              {w.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
