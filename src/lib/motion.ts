@@ -1,6 +1,6 @@
 import type { Variants, Transition } from "framer-motion";
 
-/* ─── COMPASS MOTION TOKENS ─────────────────────────────────────────────
+/* ─── COMPAX MOTION TOKENS ──────────────────────────────────────────────
    Easing verified from tastelabs.com source (GSAP implementation).
    See design/04-motion-system.md
 ──────────────────────────────────────────────────────────────────────── */

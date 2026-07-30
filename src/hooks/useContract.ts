@@ -99,6 +99,10 @@ export function useTotalTVL() {
 export function useVaultCount() {
   return useContractRead<number>("VaultManager", "get_active_vault_count", [], 0);
 }
+/** Total autonomous allocation cycles the manager has run. */
+export function useCycleCount() {
+  return useContractRead<number>("VaultManager", "get_cycle_count", [], 0);
+}
 export function useRebalanceHistory(vaultId: string) {
   return useContractRead<RebalanceRecord[]>("VaultManager", "get_rebalance_history", [vaultId], []);
 }
@@ -113,6 +117,9 @@ export function useEventCount() {
   return useContractRead<number>("EconomicEvents", "get_event_count", [], 0);
 }
 
+export function useCanClaimFaucet(address: string) {
+  return useContractRead<boolean>("ReputationSystem", "can_claim_faucet", [address], false);
+}
 export function useReputation(address: string) {
   return useContractRead<ScoreData>("ReputationSystem", "get_score", [address], DEFAULT_SCORE);
 }
@@ -145,6 +152,22 @@ export function useActiveMarkets() {
 }
 export function useTotalVolume() {
   return useContractRead<number>("PredictionMarkets", "get_total_volume", [], 0);
+}
+
+export function useAllStakes() {
+  return useContractRead<StakePosition[]>("StakingReserve", "get_all_positions", [], []);
+}
+export function useUserStakes(address: string) {
+  return useContractRead<StakePosition[]>("StakingReserve", "get_user_positions", [address], []);
+}
+export function useTotalStaked() {
+  return useContractRead<number>("StakingReserve", "get_total_staked", [], 0);
+}
+export function useStakingApr() {
+  return useContractRead<number>("StakingReserve", "get_current_apr", [], 0);
+}
+export function usePoolStats() {
+  return useContractRead<PoolStats>("StakingReserve", "get_pool_stats", [], DEFAULT_POOL_STATS);
 }
 
 // ─── Types ───
@@ -181,6 +204,12 @@ export interface RebalanceRecord {
   new_builders: number;
   reason: string;
   event_context: string;
+  /** Raw CoinGecko payload the contract reasoned over. Proof, not decoration. */
+  market_snapshot: string;
+  /** Raw Fear & Greed payload the contract reasoned over. */
+  sentiment_snapshot: string;
+  /** "keeper" = autonomous cycle, "owner" = manually triggered. */
+  triggered_by: string;
   timestamp: string;
 }
 
@@ -217,6 +246,31 @@ export interface RepEvent {
   reason: string;
   timestamp: string;
 }
+
+export interface StakePosition {
+  id: string;
+  staker: string;
+  amount: number;
+  apr_bps: number;
+  tier: string;
+  status: string;
+  ai_reasoning: string;
+  staked_at: string;
+  unstaked_at: string;
+}
+
+export interface PoolStats {
+  total_staked: number;
+  current_apr_bps: number;
+  active_positions: number;
+  unique_stakers: number;
+  total_positions: number;
+}
+
+const DEFAULT_POOL_STATS: PoolStats = {
+  total_staked: 0, current_apr_bps: 0, active_positions: 0,
+  unique_stakers: 0, total_positions: 0,
+};
 
 export interface LoanData {
   id: string;

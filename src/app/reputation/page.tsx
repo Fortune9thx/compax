@@ -1,49 +1,34 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { SANS, MONO, SERIF, AppNav, PulseTicker, panel, monoLabel } from "@/components/compass/ui";
-import { useReputation, useRepHistory, useContractWrite, RepEvent } from "@/hooks/useContract";
+import { AppShell } from "@/components/compax/AppShell";
+import { EngineFingerprint } from "@/components/compax/Engine";
+import { PageHead, StatTile, Panel, EmptyState, Tag } from "@/components/compax/primitives";
+import { useReputation, useRepHistory, useContractWrite, type RepEvent } from "@/hooks/useContract";
 import { useWallet } from "@/hooks/useWallet";
-
-const DEMO_ADDRESS = "0x00f42f7ad0edbd0818bd46c8e51cdb5670dde6d9";
-
-function eventToRow(e: RepEvent, i: number) {
-  return {
-    no: `R-${String(i + 1).padStart(3, "0")}`,
-    event: `${e.reason}`,
-    date: e.timestamp || "—",
-    delta: e.delta > 0 ? `+${e.delta}` : String(e.delta),
-    color: e.delta >= 0 ? "#6fbf8f" : "#d6926a",
-  };
-}
-
-function scoreToStrata(score: { loan_score: number; funding_score: number; prediction_score: number; vault_score: number }) {
-  const entries = [
-    { label: "LENDING", h: Math.max(8, Math.abs(score.loan_score) / 5), color: score.loan_score >= 0 ? "rgba(111,191,143,.45)" : "rgba(214,146,106,.4)" },
-    { label: "BUILDERS", h: Math.max(8, Math.abs(score.funding_score) / 5), color: score.funding_score >= 0 ? "rgba(111,191,143,.35)" : "rgba(214,146,106,.35)" },
-    { label: "PREDICTIONS", h: Math.max(8, Math.abs(score.prediction_score) / 5), color: score.prediction_score >= 0 ? "rgba(127,212,212,.4)" : "rgba(214,146,106,.3)" },
-    { label: "VAULTS", h: Math.max(8, Math.abs(score.vault_score) / 5), color: score.vault_score >= 0 ? "rgba(127,212,212,.5)" : "rgba(214,146,106,.25)" },
-    { label: "GENESIS", h: 14, color: "rgba(127,212,212,.25)" },
-  ];
-  return entries;
-}
 
 export default function ReputationPage() {
   const { address: walletAddress, connected } = useWallet();
-  const [address, setAddress] = useState(DEMO_ADDRESS);
+  const [address, setAddress] = useState("");
 
-  // Auto-populate with connected wallet address
   useEffect(() => {
     if (connected && walletAddress) setAddress(walletAddress);
   }, [connected, walletAddress]);
 
-  const { data: score, loading, refetch: refetchScore } = useReputation(address);
-  const { data: history, refetch: refetchHistory } = useRepHistory(address);
+  const { data: score, loading, error, refetch: refetchScore } = useReputation(address || "0x0");
+  const { data: history, refetch: refetchHistory } = useRepHistory(address || "0x0");
   const { execute, loading: claiming } = useContractWrite();
 
+  const degraded = !!error && /not found|timeout|unreachable/i.test(error);
   const rep = Math.round(score.total_score / 10);
-  const timeline = history.map(eventToRow);
-  const strata = scoreToStrata(score);
+
+  // Standing rendered in the same cardinal geometry as vault allocation.
+  const standing = {
+    lending: Math.max(0, score.loan_score),
+    staking: Math.max(0, score.vault_score),
+    builders: Math.max(0, score.funding_score),
+    predictions: Math.max(0, score.prediction_score),
+  };
 
   const claimFaucet = async () => {
     try {
@@ -54,106 +39,82 @@ export default function ReputationPage() {
   };
 
   return (
-    <main style={{ background: "#070a12", color: "#ecebe6", minHeight: "100vh" }}>
-      <AppNav tag="REPUTATION" active="Reputation" status={`● REP ${rep} · ${rep >= 50 ? "GOOD STANDING" : "UNDER REVIEW"}`} />
-      <PulseTicker />
+    <AppShell degraded={degraded}>
+      <PageHead
+        title="Reputation"
+        meta={`${score.total_actions} actions on record`}
+      />
 
-      <div style={{ maxWidth: 1360, margin: "0 auto", padding: "44px 40px 96px", display: "flex", flexDirection: "column", gap: 28 }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 640 }}>
-          <span style={{ font: `500 10px ${MONO}`, color: "#7fd4d4", letterSpacing: ".25em" }}>REPUTATION · STRATA</span>
-          <h1 style={{ margin: 0, font: `300 38px/1.12 ${SANS}`, letterSpacing: "-.015em" }}>How the system reads you.</h1>
-          <p style={{ margin: 0, font: `400 14px/1.65 ${SANS}`, color: "rgba(236,235,230,.6)" }}>
-            Reputation is sediment, not a score. Every action deposits a layer — visible, permanent, readable by every council.
-          </p>
-        </div>
+      <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 28 }}>
+        <input className="ce-input" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Enter address (0x…)" />
+        <button className="ce-btn" onClick={claimFaucet} disabled={claiming} style={{ whiteSpace: "nowrap" }}>
+          {claiming ? "Claiming…" : "Claim cGEN faucet"}
+        </button>
+      </div>
 
-        {/* ADDRESS INPUT */}
-        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-          <input
-            value={address}
-            onChange={(e) => setAddress(e.target.value)}
-            placeholder="Enter address (0x…)"
-            style={{ flex: 1, font: `400 13px ${MONO}`, padding: "12px 16px", borderRadius: 8, border: "1px solid rgba(236,235,230,.18)", background: "rgba(7,10,18,.5)", color: "#ecebe6", outline: "none" }}
-          />
-          <button className="ce-btn-primary" onClick={claimFaucet} disabled={claiming} style={{ font: `600 13px ${SANS}`, padding: "12px 20px", borderRadius: 7, whiteSpace: "nowrap", opacity: claiming ? 0.5 : 1 }}>
-            {claiming ? "Claiming…" : "Claim cGEN faucet"}
-          </button>
-        </div>
+      <div className="ce-grid" style={{ gridTemplateColumns: "repeat(4, 1fr)", marginBottom: 28 }}>
+        <StatTile label="Reputation" value={rep} hint={rep >= 50 ? "good standing" : "under review"} />
+        <StatTile label="Total actions" value={score.total_actions} />
+        <StatTile label="Total score" value={score.total_score.toLocaleString()} />
+        <StatTile label="Standing" value={<EngineFingerprint allocation={standing} width={56} height={20} title="Reputation standing" />} />
+      </div>
 
-        <div className="ce-2col" style={{ display: "grid", gridTemplateColumns: "1fr 1.3fr", gap: 24, alignItems: "start" }}>
-          {/* SCORE + STRATA */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-            <div style={{ ...panel, padding: 26, display: "flex", flexDirection: "column", gap: 18 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                <span style={monoLabel}>{loading ? "READING ONCHAIN…" : "YOUR STRATA BAND"}</span>
-                <span style={{ font: `600 28px ${SANS}`, color: "#7fd4d4" }}>{rep}</span>
-              </div>
-
-              <svg width="100%" height={160} viewBox="0 0 400 160" preserveAspectRatio="none" style={{ borderRadius: 8, overflow: "hidden" }}>
-                {(() => {
-                  let y = 160;
-                  const totalH = strata.reduce((a, b) => a + b.h, 0);
-                  return strata.map((s, i) => {
-                    const h = (s.h / totalH) * 160;
-                    y -= h;
-                    return (
-                      <g key={i}>
-                        <rect x="0" y={y} width="400" height={h} fill={s.color} />
-                        <text x="12" y={y + h / 2 + 3.5} fill="rgba(236,235,230,.6)" fontSize="8" fontFamily="IBM Plex Mono, monospace">{s.label}</text>
-                      </g>
-                    );
-                  });
-                })()}
-              </svg>
-
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 8, font: `400 10px ${MONO}` }}>
-                <span style={{ color: "rgba(236,235,230,.45)" }}>LOAN: {score.loan_score}</span>
-                <span style={{ color: "rgba(236,235,230,.45)" }}>FUNDING: {score.funding_score}</span>
-                <span style={{ color: "rgba(236,235,230,.45)" }}>PREDICTION: {score.prediction_score}</span>
-                <span style={{ color: "rgba(236,235,230,.45)" }}>VAULT: {score.vault_score}</span>
-              </div>
-            </div>
-
-            {/* READING */}
-            <div style={{ ...panel, padding: 26, display: "flex", flexDirection: "column", gap: 14 }}>
-              <span style={{ ...monoLabel, letterSpacing: ".2em" }}>SYSTEM READING</span>
-              <div style={{ font: `italic 400 15px/1.55 ${SERIF}`, color: "rgba(236,235,230,.75)" }}>
-                {score.total_actions === 0
-                  ? `"No actions recorded yet. Claim the faucet to initialize your reputation strata."`
-                  : `"${rep >= 70 ? "Reliable counterparty." : rep >= 40 ? "Emerging track record." : "Under observation."} ${score.total_actions} actions on record across ${[score.loan_score && "lending", score.funding_score && "builders", score.prediction_score && "predictions", score.vault_score && "vaults"].filter(Boolean).join(", ") || "no categories"}."`}
-              </div>
-              <div style={{ display: "flex", gap: 16, font: `500 10px ${MONO}` }}>
-                <span style={{ color: rep >= 50 ? "#6fbf8f" : "#d6926a" }}>LENDING: {rep >= 50 ? "STANDARD RATE" : "ELEVATED RATE"}</span>
-                <span style={{ color: rep >= 40 ? "#6fbf8f" : "#d6926a" }}>BUILDERS: {rep >= 40 ? "CLEAR" : "RESTRICTED"}</span>
-                <span style={{ color: "#7fd4d4" }}>ACTIONS: {score.total_actions}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* TIMELINE */}
-          <div style={{ ...panel, overflow: "hidden" }}>
-            <div style={{ padding: "18px 24px", borderBottom: "1px solid rgba(236,235,230,.08)", display: "flex", justifyContent: "space-between" }}>
-              <span style={{ font: `500 15px ${SANS}` }}>Reputation timeline</span>
-              <span style={monoLabel}>EVERY LAYER IS PERMANENT</span>
-            </div>
-            {timeline.length === 0 && (
-              <div style={{ padding: "32px 24px", textAlign: "center" }}>
-                <span style={{ font: `italic 400 14px ${SERIF}`, color: "rgba(236,235,230,.4)" }}>
-                  No reputation events yet. Interact with the system to build your strata.
-                </span>
-              </div>
-            )}
-            {timeline.map((r) => (
-              <div key={r.no} className="ce-row-hover" style={{ display: "grid", gridTemplateColumns: "60px 1fr 80px 60px", gap: 12, padding: "14px 24px", borderBottom: "1px solid rgba(236,235,230,.06)", font: `400 11px ${MONO}`, alignItems: "baseline" }}>
-                <span style={{ color: "rgba(236,235,230,.45)" }}>{r.no}</span>
-                <span style={{ font: `400 13px ${SANS}`, color: "rgba(236,235,230,.85)" }}>{r.event}</span>
-                <span style={{ color: "rgba(236,235,230,.45)" }}>{r.date}</span>
-                <span style={{ textAlign: "right", color: r.color, font: `500 12px ${MONO}` }}>{r.delta}</span>
+      <div className="ce-grid ce-2col" style={{ gridTemplateColumns: "1fr 1.3fr", alignItems: "start" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          <Panel style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <span className="ce-section-label">{loading ? "Reading onchain…" : "Sector scores"}</span>
+            {[
+              { k: "Lending", v: score.loan_score },
+              { k: "Staking / vaults", v: score.vault_score },
+              { k: "Builders", v: score.funding_score },
+              { k: "Predictions", v: score.prediction_score },
+            ].map((s) => (
+              <div key={s.k} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <span style={{ width: 120, fontSize: 12, color: "var(--muted)" }}>{s.k}</span>
+                <div style={{ flex: 1, height: 8, borderRadius: 4, background: "var(--raised)", overflow: "hidden" }}>
+                  <div style={{ width: `${Math.min(100, Math.abs(s.v) / 5)}%`, height: "100%", background: s.v >= 0 ? "var(--primary)" : "var(--clay)", borderRadius: 4 }} />
+                </div>
+                <span className="ce-mono" style={{ width: 48, fontSize: 12, textAlign: "right", color: s.v >= 0 ? "var(--primary)" : "var(--clay)" }}>{s.v}</span>
               </div>
             ))}
-          </div>
+          </Panel>
+
+          <Panel style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <span className="ce-section-label">Standing</span>
+            <p style={{ fontSize: 14, color: "var(--text)", margin: 0 }}>
+              {score.total_actions === 0
+                ? "No actions recorded."
+                : rep >= 70 ? "Reliable counterparty." : rep >= 40 ? "Emerging track record." : "Under observation."}
+            </p>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <Tag tone={rep >= 50 ? "active" : "provisional"}>Lending: {rep >= 50 ? "standard rate" : "elevated rate"}</Tag>
+              <Tag tone={rep >= 40 ? "active" : "provisional"}>Builders: {rep >= 40 ? "clear" : "restricted"}</Tag>
+            </div>
+          </Panel>
         </div>
+
+        <Panel style={{ padding: 0, overflow: "hidden" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", padding: "18px 24px", borderBottom: "1px solid var(--line-soft)" }}>
+            <span className="ce-h2" style={{ fontSize: 16, margin: 0 }}>Reputation timeline</span>
+            <span className="ce-section-label">Every layer is permanent</span>
+          </div>
+          {!address ? (
+            <EmptyState>Connect a wallet or enter an address to view standing.</EmptyState>
+          ) : history.length === 0 ? (
+            <EmptyState>{degraded ? "Standing syncing…" : "No activity yet."}</EmptyState>
+          ) : (
+            history.map((e: RepEvent, i: number) => (
+              <div key={i} className="ce-table-row" style={{ display: "grid", gridTemplateColumns: "70px 1fr 60px", gap: 12, padding: "14px 24px", borderBottom: "1px solid var(--line-soft)", alignItems: "baseline" }}>
+                <span className="ce-mono" style={{ fontSize: 10.5, color: "var(--faint)" }}>R-{String(i + 1).padStart(3, "0")}</span>
+                <span style={{ fontSize: 13, color: "var(--text)" }}>{e.reason}</span>
+                <span className="ce-mono" style={{ fontSize: 12, textAlign: "right", color: e.delta >= 0 ? "var(--primary)" : "var(--clay)" }}>
+                  {e.delta > 0 ? `+${e.delta}` : e.delta}
+                </span>
+              </div>
+            ))
+          )}
+        </Panel>
       </div>
-    </main>
+    </AppShell>
   );
 }
