@@ -3,6 +3,14 @@ from genlayer import *
 import json
 
 
+@gl.evm.contract_interface
+class _Recipient:
+    class View:
+        pass
+    class Write:
+        pass
+
+
 def _sanitize(s: str, max_len: int = 500) -> str:
     """Strip prompt-structuring chars and cap length."""
     for ch in ("{", "}", "[", "]", "`", '"', "#"):
@@ -195,9 +203,11 @@ class VaultManager(gl.Contract):
             raise gl.vm.UserError("insufficient_balance")
         if amt > v["treasury"]:
             raise gl.vm.UserError("insufficient_treasury")
+        # CEI: update state before the external transfer
         v["treasury"] = v["treasury"] - amt
         self.vaults[vault_id] = json.dumps(v)
         self.depositor_balances[bal_key] = str(balance - amt)
+        _Recipient(Address(sender)).emit_transfer(value=u256(amt))
         return "withdrawn"
 
     @gl.public.write

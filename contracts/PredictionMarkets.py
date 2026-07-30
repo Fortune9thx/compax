@@ -3,6 +3,14 @@ from genlayer import *
 import json
 
 
+@gl.evm.contract_interface
+class _Recipient:
+    class View:
+        pass
+    class Write:
+        pass
+
+
 def _sanitize(s: str, max_len: int = 500) -> str:
     for ch in ("{", "}", "[", "]", "`", '"', "#"):
         s = s.replace(ch, "")
@@ -78,7 +86,7 @@ class PredictionMarkets(gl.Contract):
             existing["amount"] = existing["amount"] + amount
             self.stakes[stake_key] = json.dumps(existing)
         else:
-            self.stakes[stake_key] = json.dumps({"position": position, "amount": amount})
+            self.stakes[stake_key] = json.dumps({"position": position, "amount": amount, "claimed": False})
 
         if position == "yes":
             m["total_yes"] = m["total_yes"] + amount
@@ -150,6 +158,42 @@ class PredictionMarkets(gl.Contract):
         m["resolution_reasoning"] = reasoning
         self.markets[market_id] = json.dumps(m)
         return outcome
+
+    @gl.public.write
+    def claim_winnings(self, market_id: str) -> str:
+        """Winners reclaim their stake plus a proportional share of the losing pool."""
+        market_id = _sanitize(market_id, 20)
+        sender = str(gl.message.sender_address)
+        if market_id not in self.markets:
+            raise gl.vm.UserError("market_not_found")
+        m = json.loads(self.markets[market_id])
+        if m["status"] != "resolved":
+            raise gl.vm.UserError("market_not_resolved")
+
+        stake_key = f"{market_id}_{sender}"
+        if stake_key not in self.stakes:
+            raise gl.vm.UserError("no_stake_found")
+        s = json.loads(self.stakes[stake_key])
+        if s.get("claimed"):
+            raise gl.vm.UserError("already_claimed")
+        if s["position"] != m["outcome"]:
+            raise gl.vm.UserError("losing_position_not_claimable")
+
+        winning_pool = m["total_yes"] if m["outcome"] == "yes" else m["total_no"]
+        losing_pool = m["total_no"] if m["outcome"] == "yes" else m["total_yes"]
+        principal = s["amount"]
+        if winning_pool > 0:
+            payout = principal + (principal * losing_pool) // winning_pool
+        else:
+            payout = principal
+
+        # CEI: mark claimed before the external transfer
+        s["claimed"] = True
+        self.stakes[stake_key] = json.dumps(s)
+
+        if payout > 0:
+            _Recipient(Address(sender)).emit_transfer(value=u256(payout))
+        return str(payout)
 
     @gl.public.view
     def get_market(self, market_id: str) -> dict:

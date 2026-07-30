@@ -17,15 +17,15 @@ Chain ID:            4221
 Currency symbol:     GEN
 ```
 
-If you already have a Bradbury-funded account, skip to step 2. If not, get testnet GEN from the [GenLayer Bradbury faucet](https://genlayer.com) (needed to pay gas for writes).
+If you already have a Bradbury-funded account, skip to step 2. If not, get testnet GEN from the [GenLayer Bradbury faucet](https://testnet-faucet.genlayer.foundation) (needed for gas and for deposits/loans/stakes — see the note in step 3 below).
 
 ## 2. Connect your wallet
 
 Open **https://compax-sepia.vercel.app**, click **Connect wallet** in the top rail. If MetaMask is on the wrong network, the app will prompt a network switch to Bradbury automatically.
 
-## 3. Claim cGEN (the in-app token used for deposits/loans/stakes)
+## 3. Activate your reputation record
 
-Go to `/reputation` or `/faucet` → **Claim cGEN faucet**. This is a one-time claim per address (`ReputationSystem.claim_cgen`). Confirm the transaction in MetaMask, wait for the deliberation indicator to resolve to **Accepted**.
+Go to `/reputation` or `/faucet` → **Activate**. This is a one-time, per-address write (`ReputationSystem.claim_cgen`) that initializes your onchain reputation record — it does **not** transfer any cGEN to your wallet, despite the method's name. Confirm the transaction in MetaMask, wait for the deliberation indicator to resolve to **Accepted**. The actual testnet GEN you use for deposits/loans/stakes comes from the [Bradbury faucet](https://testnet-faucet.genlayer.foundation) in step 1.
 
 ## 4. Create a vault
 

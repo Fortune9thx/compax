@@ -217,7 +217,6 @@ export default function VaultDetailPage() {
                 { k: "Strategy", v: vault.strategy },
                 { k: "Personality", v: vault.personality },
                 { k: "ID", v: vault.id },
-                { k: "Total yield", v: `${vault.total_yield.toLocaleString()} cGEN` },
               ].map((m) => (
                 <div key={m.k} className="ce-mono" style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, borderBottom: "1px solid var(--line-soft)", paddingBottom: 8 }}>
                   <span style={{ color: "var(--faint)" }}>{m.k}</span>

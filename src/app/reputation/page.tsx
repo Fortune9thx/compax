@@ -47,8 +47,8 @@ export default function ReputationPage() {
 
       <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 28 }}>
         <input className="ce-input" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Enter address (0x…)" />
-        <button className="ce-btn" onClick={claimFaucet} disabled={claiming} style={{ whiteSpace: "nowrap" }}>
-          {claiming ? "Claiming…" : "Claim cGEN faucet"}
+        <button className="ce-btn" onClick={claimFaucet} disabled={claiming} title="Activates the connected wallet's reputation record — not the searched address" style={{ whiteSpace: "nowrap" }}>
+          {claiming ? "Activating…" : "Activate my reputation"}
         </button>
       </div>
 

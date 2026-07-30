@@ -3,6 +3,14 @@ from genlayer import *
 import json
 
 
+@gl.evm.contract_interface
+class _Recipient:
+    class View:
+        pass
+    class Write:
+        pass
+
+
 def _sanitize(s: str, max_len: int = 500) -> str:
     for ch in ("{", "}", "[", "]", "`", '"', "#"):
         s = s.replace(ch, "")
@@ -116,9 +124,13 @@ class StakingReserve(gl.Contract):
             raise gl.vm.UserError("unauthorized: only staker can unstake")
         if p["status"] != "active":
             raise gl.vm.UserError("position_not_active")
+        amount = int(p["amount"])
+        # CEI: update state before the external transfer
         p["status"] = "unstaked"
         self.positions[position_id] = json.dumps(p)
-        self.total_staked = u256(max(0, int(self.total_staked) - int(p["amount"])))
+        self.total_staked = u256(max(0, int(self.total_staked) - amount))
+        if amount > 0:
+            _Recipient(Address(sender)).emit_transfer(value=u256(amount))
         return "unstaked"
 
     @gl.public.write
