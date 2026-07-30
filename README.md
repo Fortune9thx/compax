@@ -1,23 +1,19 @@
-# Compass — The Operating System for Autonomous Capital
+# Compax — The Operating System for Autonomous Capital
 
 **An economy that thinks before it moves.**
 
-Compass is an autonomous financial operating system built on [GenLayer](https://genlayer.com) Bradbury testnet. It replaces static DeFi dashboards with AI-governed treasuries that reason, allocate, and adapt — writing every decision onchain with full lineage.
+Compax is an autonomous treasury operating system built on [GenLayer](https://genlayer.com) Bradbury testnet. Users state an objective; GenLayer intelligent contracts reason over live market data and continuously reallocate capital across lending, staking, builder funding, and prediction markets — writing every decision onchain with its reasoning attached.
 
-This is not a yield aggregator. This is not a portfolio tracker. Compass is what happens when capital has a brain.
+This is not a demo. It is a functioning Bradbury testnet application. The intelligent contract is the portfolio manager.
 
 ---
 
 ## The Thesis
 
-DeFi today is reactive. Users chase yield, manage risk manually, and trust opaque algorithms. Compass inverts this model:
-
-1. **State an objective** — not a position, not a trade. A mandate. *"Grow this treasury toward steady income with moderate risk over 12 months."*
-2. **A council reasons** — four AI analysts (Risk, Yield, Liquidity, Macro) deliberate on GenLayer's intelligent contract layer. They argue, dissent, and reach consensus — in public, forever.
-3. **Capital moves** — allocation shifts based on reasoning, not signals. Every rebalance, every loan decision, every funding vote is recorded onchain with the full argument preserved.
-4. **The record grows** — reputation is sediment, not a score. Every action deposits a layer. Dissent is preserved alongside consensus. Nothing is hidden.
-
-The key insight: **the reasoning IS the product**. Not the yield. Not the APY. The fact that you can read exactly why capital moved, who argued for it, who dissented, and what the system learned.
+1. **State an objective** — a mandate, not a position. *"Grow this treasury toward steady income with moderate risk."*
+2. **Five validators deliberate** — each intelligent contract call is independently evaluated by five GenLayer validators (`gl.eq_principle.prompt_non_comparative`) before consensus is reached and state is written.
+3. **Capital moves, onchain** — every rebalance, loan decision, funding evaluation, and reputation update is recorded with the reasoning and the live market data (CoinGecko prices, Fear & Greed index) that informed it.
+4. **The vault manager can act on its own** — a registered keeper (`keeper/cycle.mjs`) can trigger a vault's reallocation without a human present. The keeper decides nothing and cannot move funds; it only asks the contract to reason.
 
 ---
 
@@ -25,49 +21,44 @@ The key insight: **the reasoning IS the product**. Not the yield. Not the APY. T
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    COMPASS FRONTEND                         │
-│            Next.js 16 · React 19 · App Router               │
-│     IBM Plex Sans/Mono · Newsreader · Void/Panel theme      │
+│                     COMPAX FRONTEND                          │
+│         Next.js 16 (Turbopack) · React 19 · App Router       │
+│    Archivo / JetBrains Mono / Instrument Serif · dark theme  │
 ├─────────────────────────────────────────────────────────────┤
-│                   HOOKS LAYER                               │
-│     useContract.ts — typed reads/writes per contract         │
-│     Sequential RPC calls (Bradbury rate limit aware)         │
+│                      HOOKS LAYER                              │
+│      useContract.ts — typed reads/writes per contract         │
 ├─────────────────────────────────────────────────────────────┤
-│                 API ROUTE (/api/write)                       │
-│     Server-side signing · DEMO_PRIVATE_KEY · Never exposed   │
+│                 CLIENT-SIDE SIGNING                            │
+│    src/lib/genlayer.ts — genlayer-js + connected MetaMask     │
+│    Every write is signed by the user's own wallet.            │
 ├─────────────────────────────────────────────────────────────┤
-│              GENLAYER BRADBURY TESTNET                       │
-│                                                             │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │ VaultManager │  │ LendingMarket│  │ BuilderFunding│      │
-│  │              │  │              │  │               │      │
-│  │ create_vault │  │ request_loan │  │submit_project │      │
-│  │ deposit      │  │ repay_loan   │  │repay_funding  │      │
-│  │ withdraw     │  │              │  │               │      │
-│  │ rebalance    │  │              │  │               │      │
-│  └──────────────┘  └──────────────┘  └───────────────┘      │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │PredictionMkts│  │ Reputation   │  │EconomicEvents│      │
-│  │              │  │   System     │  │              │      │
-│  │ create_market│  │ get_score    │  │trigger_event │      │
-│  │ stake        │  │ get_history  │  │resolve_event │      │
-│  │resolve_market│  │ claim_cgen   │  │              │      │
-│  └──────────────┘  └──────────────┘  └──────────────┘      │
+│              GENLAYER BRADBURY TESTNET                         │
+│                                                                │
+│  VaultManager   LendingMarket   BuilderFunding                │
+│  PredictionMarkets   ReputationSystem   EconomicEvents         │
+│  StakingReserve                                                │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### 6 Intelligent Contracts
+There is no server-side relayer or backend API route — writes are signed directly by the connected wallet via `genlayer-js`, targeting Bradbury (chainId `4221`) at `https://rpc-bradbury.genlayer.com`.
 
-Every contract uses GenLayer's `eq_principle.prompt_non_comparative` for AI-powered decision making — validators reach consensus through reasoning, not just computation.
+The autonomous keeper (`keeper/cycle.mjs`) is a separate, optional process: it holds its own registered keeper key, reads every vault under management, and calls `rebalance_vault` on each — the same write path a human owner would use, just triggered on a schedule instead of a click.
+
+### 7 Intelligent Contracts
+
+Every contract uses `gl.eq_principle.prompt_non_comparative` (or `strict_eq` for raw data fetches) so validators reach consensus through reasoning, not just computation.
 
 | Contract | Purpose | AI Decision |
 |----------|---------|-------------|
-| **VaultManager** | Autonomous treasuries with stated objectives | Rebalance allocation across lending/staking/predictions/builders |
-| **LendingMarket** | Credit priced by reputation | Approve/reject loans, set interest rates, assess risk |
+| **VaultManager** | Autonomous treasuries with stated objectives | Initial allocation at creation, and every rebalance across lending/staking/predictions/builders — using live CoinGecko + Fear & Greed data |
+| **LendingMarket** | Credit priced by market conditions | Approve/reject loans, set interest rate, assess risk score |
 | **BuilderFunding** | Milestone-gated ecosystem funding | Evaluate proposals, allocate partial/full funding |
 | **PredictionMarkets** | Questions contracts can resolve | Resolve binary markets with reasoned outcomes |
-| **ReputationSystem** | Sediment-based reputation tracking | Score actions across loan/funding/prediction/vault categories |
-| **EconomicEvents** | System-wide event propagation | Analyze event severity and impact guidance |
+| **ReputationSystem** | Score tracking across all sectors | Weighs the severity/context of each outcome to set the score delta, not a fixed constant |
+| **EconomicEvents** | System-wide event propagation | Assesses event severity and impact guidance |
+| **StakingReserve** | The reserve backing `allocation_staking` | Assigns per-position yield band + validator tier from live market context |
+
+All 7 contracts are independent — none take constructor arguments and none call each other. Current addresses live in [`src/lib/contracts.ts`](src/lib/contracts.ts).
 
 ---
 
@@ -75,96 +66,81 @@ Every contract uses GenLayer's `eq_principle.prompt_non_comparative` for AI-powe
 
 | Route | Purpose |
 |-------|---------|
-| `/` | Landing — value prop, Capital Engine SVG, AI Council feed |
-| `/ecosystem` | Economy Map — live SVG circuit of all capital flows between vaults, markets, and the record |
-| `/vaults` | Vault Marketplace — filter by objective class and risk posture, create new vaults |
-| `/vaults/create` | Create Vault — sentence composer for objective, constraint builder, council preview, dry-run simulation |
-| `/vaults/[id]` | Vault Detail — Brain (council chamber), Treasury (allocation engine SVG), History (rebalance record) |
-| `/lending` | Lending Market — sentence-based loan request, live AI council evaluation, open book |
-| `/builders` | Builder Funding — proposal cards, submission form, AI council review |
-| `/predictions` | Prediction Markets — question cards with YES/NO weight bars, resolution with verbatim reasoning |
-| `/reputation` | Reputation — strata band visualization, council reading, action timeline |
+| `/` | Landing — the Terminal (product UI as hero), how it works, validator consensus, four sectors |
+| `/ecosystem` | Overview — network-wide TVL, allocation, vaults, prediction markets, event feed |
+| `/vaults` | Vault marketplace — browse and create vaults |
+| `/vaults/create` | Create a vault — name, strategy, objective, risk tolerance |
+| `/vaults/[id]` | Vault detail — Brain (last decision + active event), Treasury (allocation + metadata), History (every rebalance, expandable) |
+| `/lending` | Request a loan — AI evaluates approval, rate, and risk |
+| `/builders` | Submit a funding proposal — AI evaluates fund/reject/partial |
+| `/predictions` | Create and stake on prediction markets |
+| `/staking` | Reserve composition, yield tiers |
+| `/reputation` | Score, sector breakdown, action timeline |
+| `/faucet` | One-time cGEN claim |
 
 ---
 
 ## Design Language
 
-Institutional sans-first. Bloomberg meets Palantir meets Vision Pro.
+Institutional, dark by default (`[data-theme="light"]` override available).
 
-- **Typography**: IBM Plex Sans (300–600, leads everything), IBM Plex Mono (data/labels), Newsreader italic (reasoning accent — agent quotes, objectives only)
-- **Color**: Void `#070A12`, Panel `#0A0F1A`, Reason cyan `#7FD4D4` (reserved — never decorative), Green `#6FBF8F` (yield/agreement), Amber `#D6926A` (risk/dissent)
-- **Motion**: `ceFlow` (circuit stroke animation), `cePulse` (live indicators), `ceScan` (brain scanline), `ceDrift` (ticker), `ceRise` (400ms content reveal)
-- **No spinners**: Council thinking dots only. No loading bars. No skeleton screens. The system either knows or it's reasoning.
+- **Typography**: Archivo (UI), JetBrains Mono (data/labels), Instrument Serif italic (reasoning/objective quotes)
+- **Color**: Ground `#070F12`, Primary `#00C27A`, Signal `#5FE3A8`, Amber `#E8A33D`, Clay `#E0654A`
+- **Motion**: Lenis smooth scroll + `Reveal`/`RevealGroup`/`RevealItem` (rise + fade, staggered)
+- **Consensus glyph**: only ever renders a state we actually know — `ACCEPTED` (five validators agreed, real chain semantics) or an unresolved/deliberating state. It never fabricates a per-validator vote breakdown, since no contract exposes one.
 
 ---
 
-## Getting Started
+## Getting Started (local dev)
 
 ### Prerequisites
 
 - Node.js 18+
-- GenLayer Bradbury testnet account with cGEN
+- A GenLayer Bradbury testnet account with cGEN, and MetaMask configured for chainId `4221`
 
 ### Install & Run
 
 ```bash
 npm install
-cp .env.example .env.local
-# Add your DEMO_PRIVATE_KEY to .env.local
 npm run dev
 ```
 
-### Environment
+Writes are signed by whatever wallet the user connects in the browser — no server-side key is needed to run the frontend locally.
 
-```env
-DEMO_PRIVATE_KEY=0x...  # GenLayer account private key for write operations
+### Optional: the autonomous keeper
+
+The keeper is a separate script, not required for the frontend:
+
+```bash
+cp deploy/.env.example deploy/.env   # if present, else create deploy/.env
+# deploy/.env:
+#   ACCOUNT_PRIVATE_KEY=0x...        # a GenLayer account registered as a keeper via add_keeper
+
+npm run keeper:dry     # one cycle, no writes
+npm run keeper         # one cycle
+npm run keeper:loop    # runs forever, every INTERVAL_MIN (default 30)
 ```
 
-### Deployed Contracts (Bradbury Testnet)
+`deploy/.env` and `.env.local` are gitignored — never commit a private key.
 
+### Redeploying contracts
+
+```bash
+node deploy/deploy.mjs                # deploy all 7 fresh
+node deploy/redeploy-fixed.mjs        # redeploy VaultManager + ReputationSystem only
 ```
-EconomicEvents:    0x5a9AeE83e082fE87742e0a8d8105888d192e96c9
-ReputationSystem:  0x6e03d11d9427E0Dc2cA4Ec06FC19537c20aD1027
-LendingMarket:     0xD28e774e77fa01Ce0bF42E82Dd899De3E90a7e0a
-BuilderFunding:    0x003Ba87D5FC79653FEC4E75Af234BB5495193200
-PredictionMarkets: 0xD708C9e308C7eeb2788218470175BD96f4fB9D84
-VaultManager:      0xd167F20348ff191E119D974FfaD746dBE052c51a
-```
+
+See [`contracts/deploy_order.md`](contracts/deploy_order.md). After any deploy, update the addresses in `src/lib/contracts.ts`.
 
 ---
 
-## What Makes This Different
+## Deploying to production (Vercel)
 
-### vs. Traditional DeFi Dashboards
-Traditional dashboards show you numbers. Compass shows you *why* those numbers exist. Every allocation shift comes with a recorded argument. Every loan decision comes with AI reasoning preserved onchain. You don't trust the algorithm — you read its argument and decide for yourself.
-
-### vs. AI Trading Bots
-Bots optimize for a signal. Compass reasons about an objective. The difference: a bot buys low and sells high. A council argues whether "low" means opportunity or regime change, records the dissent, and lets the mandate decide. The reasoning is the audit trail.
-
-### vs. DAOs
-DAOs vote. Compass argues. A DAO proposal is a binary yes/no. A Compass decision is a four-way debate where dissent is preserved alongside consensus. The system doesn't just record what happened — it records what was considered and rejected.
-
----
-
-## Future Directions
-
-### Near-term (Bradbury → Production)
-- **Multi-wallet support** — connect any GenLayer wallet, track per-depositor balances, personal reputation
-- **Real-time event streaming** — WebSocket subscriptions for live council deliberations and rebalance events
-- **Cross-vault arbitrage** — councils can propose capital movements between vaults when objectives align
-- **Richer reputation strata** — time-weighted decay, category-specific trust levels, cross-protocol reputation imports
-
-### Medium-term
-- **Council customization** — deploy vaults with custom analyst mandates (ESG analyst, sector specialist, volatility trader)
-- **Delegation markets** — delegate your capital to a vault's objective, earn yield proportional to the council's performance
-- **Governance layer** — REP-weighted governance for protocol-level decisions (fee structures, new contract deployments, parameter changes)
-- **Mobile companion** — push notifications for council deliberations affecting your positions, one-tap approve/dissent
-
-### Long-term Vision
-- **Autonomous economic zones** — multiple Compass instances forming a network of reasoning economies, where capital flows between zones based on cross-council agreements
-- **Institutional-grade audit trails** — compliance-ready decision records that satisfy regulatory requirements through transparent AI reasoning
-- **Protocol-level intelligence** — GenLayer validators learning from historical decisions to improve consensus quality over time
-- **The Compass Standard** — an open specification for "reasoned capital management" that other protocols can adopt, creating a shared language for AI-governed finance
+1. Push this repo to GitHub and import it in Vercel.
+2. No environment variables are required for the frontend itself — all reads and writes happen client-side against Bradbury.
+3. Set `NEXT_PUBLIC_SITE_URL` to the app's production URL (used for OpenGraph/Twitter metadata in `src/app/layout.tsx`).
+4. If running the keeper as a scheduled job (e.g. a cron worker, not on Vercel's edge), keep `ACCOUNT_PRIVATE_KEY` in that worker's own secret store — it is never read by the Next.js app.
+5. `next.config.ts` sets baseline security headers (CSP, X-Frame-Options, etc.) for all routes.
 
 ---
 
@@ -173,8 +149,8 @@ DAOs vote. Compass argues. A DAO proposal is a binary yes/no. A Compass decision
 - **Frontend**: Next.js 16, React 19, TypeScript, Turbopack
 - **Chain**: GenLayer Bradbury Testnet
 - **Client SDK**: `genlayer-js`
-- **Fonts**: IBM Plex Sans, IBM Plex Mono, Newsreader (Google Fonts via next/font)
-- **Design**: Inline styles, CSS custom properties, zero component libraries
+- **Fonts**: Archivo, JetBrains Mono, Instrument Serif (Google Fonts via `next/font`)
+- **Motion**: Framer Motion, Lenis
 
 ---
 
@@ -183,31 +159,51 @@ DAOs vote. Compass argues. A DAO proposal is a binary yes/no. A Compass decision
 ```
 src/
 ├── app/
-│   ├── page.tsx              # Landing
-│   ├── ecosystem/page.tsx    # Economy Map
+│   ├── page.tsx               # Landing
+│   ├── ecosystem/page.tsx     # Overview
 │   ├── vaults/
-│   │   ├── page.tsx          # Marketplace
-│   │   ├── create/page.tsx   # Create Vault
-│   │   └── [id]/page.tsx     # Vault Detail
-│   ├── lending/page.tsx      # Lending Market
-│   ├── builders/page.tsx     # Builder Funding
-│   ├── predictions/page.tsx  # Prediction Markets
-│   ├── reputation/page.tsx   # Reputation System
-│   └── api/write/route.ts    # Server-side contract writes
-├── components/compass/
-│   └── ui.tsx                # Shared primitives
+│   │   ├── page.tsx           # Marketplace
+│   │   ├── create/page.tsx    # Create Vault
+│   │   └── [id]/page.tsx      # Vault Detail
+│   ├── lending/page.tsx
+│   ├── builders/page.tsx
+│   ├── predictions/page.tsx
+│   ├── staking/page.tsx
+│   ├── reputation/page.tsx
+│   ├── faucet/page.tsx
+│   ├── error.tsx               # Route-level error boundary
+│   ├── not-found.tsx           # 404
+│   └── global-error.tsx        # Root layout crash fallback
+├── components/compax/
+│   ├── AppShell.tsx            # Rail nav, degraded banner
+│   ├── Terminal.tsx            # Hero — the product UI itself
+│   ├── Allocation.tsx          # AllocationPanel
+│   ├── Engine.tsx              # EngineFingerprint, ConsensusGlyph
+│   ├── DecisionRecord.tsx      # Expandable rebalance history row
+│   ├── TxStatus.tsx            # Deliberation readout for in-flight writes
+│   ├── Reveal.tsx              # Scroll-entrance system
+│   ├── SmoothScroll.tsx        # Lenis
+│   └── primitives.tsx          # PageHead, StatTile, Panel, EmptyState, Tag
 ├── hooks/
-│   └── useContract.ts        # Typed hooks for all 6 contracts
+│   ├── useContract.ts          # Typed hooks for all 7 contracts
+│   └── useWallet.ts            # MetaMask connect/chain-switch/account tracking
 ├── lib/
-│   ├── contracts.ts          # Deployed contract addresses
-│   └── genlayer.ts           # Read/write client wrappers
+│   ├── contracts.ts            # Deployed contract addresses
+│   └── genlayer.ts             # Read/write client wrappers (client-side signing)
 contracts/
 ├── VaultManager.py
 ├── LendingMarket.py
 ├── BuilderFunding.py
 ├── PredictionMarkets.py
 ├── ReputationSystem.py
-└── EconomicEvents.py
+├── EconomicEvents.py
+├── StakingReserve.py
+└── deploy_order.md
+keeper/
+└── cycle.mjs                   # Autonomous allocation heartbeat
+deploy/
+├── deploy.mjs                  # Deploy all 7 contracts
+└── redeploy-fixed.mjs          # Redeploy VaultManager + ReputationSystem
 ```
 
 ---

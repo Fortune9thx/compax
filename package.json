@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "keeper": "node keeper/cycle.mjs",
+    "keeper:loop": "node keeper/cycle.mjs --loop",
+    "keeper:dry": "node keeper/cycle.mjs --dry"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.19",
@@ -18,6 +21,7 @@
     "clsx": "^2.1.1",
     "framer-motion": "^12.42.2",
     "genlayer-js": "^1.1.8",
+    "lenis": "^1.3.25",
     "lucide-react": "^1.23.0",
     "next": "16.2.10",
     "react": "19.2.4",
