@@ -6,6 +6,8 @@ Compax is an autonomous treasury operating system built on [GenLayer](https://ge
 
 This is not a demo. It is a functioning Bradbury testnet application. The intelligent contract is the portfolio manager.
 
+**Live app**: https://compax-sepia.vercel.app · **Testing guide**: [TESTING.md](TESTING.md) · **Portal submission details**: [SUBMISSION.md](SUBMISSION.md)
+
 ---
 
 ## The Thesis
