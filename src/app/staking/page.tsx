@@ -12,9 +12,7 @@ import {
   useContractWrite,
   type StakePosition,
 } from "@/hooks/useContract";
-
-const AMOUNTS = [5000, 15000, 50000];
-const LOCKS = ["flexible", "90-day lock", "long-horizon"];
+import { useWallet } from "@/hooks/useWallet";
 
 function shortAddr(a: string) {
   return a.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a;
@@ -26,21 +24,40 @@ export default function StakingPage() {
   const { data: apr } = useStakingApr();
   const { execute, loading: writing } = useContractWrite();
   const { tx, run, reset } = useTxStatus();
+  const { address } = useWallet();
 
-  const [amtIdx, setAmtIdx] = useState(1);
-  const [lockIdx, setLockIdx] = useState(0);
+  const [amount, setAmount] = useState("");
+  const [lockHint, setLockHint] = useState("");
+  const [unstakingId, setUnstakingId] = useState<string | null>(null);
+  const [unstakeError, setUnstakeError] = useState<string | null>(null);
+
+  const doUnstake = async (positionId: string) => {
+    setUnstakingId(positionId);
+    setUnstakeError(null);
+    try {
+      await execute("StakingReserve", "unstake", [positionId]);
+      refetch();
+    } catch (e) {
+      setUnstakeError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setUnstakingId(null);
+    }
+  };
 
   const degraded = !!error && /not found|timeout|unreachable/i.test(error);
+  const canStake = !!amount && Number(amount) > 0 && !writing && tx.phase !== "deliberating";
 
   const stake = async () => {
-    await run(() =>
+    if (!canStake) return;
+    const r = await run(() =>
       execute(
         "StakingReserve",
         "stake",
-        [LOCKS[lockIdx]],
-        BigInt(AMOUNTS[amtIdx]),
+        [lockHint.trim() || "flexible"],
+        BigInt(amount),
       ),
     );
+    if (r.ok) { setAmount(""); setLockHint(""); }
     refetch();
   };
 
@@ -71,20 +88,14 @@ export default function StakingPage() {
       </div>
 
       <div className="ce-grid ce-stake-grid" style={{ gridTemplateColumns: "1fr 1.2fr", alignItems: "start", marginBottom: 28 }}>
-        <Panel style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+        <Panel style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <span className="ce-section-label">Open a position</span>
-          <div className="ce-serif" style={{ fontSize: 22, lineHeight: 1.6, fontStyle: "italic", color: "var(--text)" }}>
-            Stake{" "}
-            <button className="ce-slot" onClick={() => setAmtIdx((amtIdx + 1) % AMOUNTS.length)}>
-              {AMOUNTS[amtIdx].toLocaleString()} cGEN
-            </button>{" "}
-            into the reserve,{" "}
-            <button className="ce-slot" onClick={() => setLockIdx((lockIdx + 1) % LOCKS.length)}>
-              {LOCKS[lockIdx]}
-            </button>
-            .
-          </div>
-          <button className="ce-btn" onClick={stake} disabled={writing || tx.phase === "deliberating"} style={{ alignSelf: "flex-start" }}>
+          <input className="ce-input" type="number" min={1} value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Amount (cGEN)" />
+          <input className="ce-input" value={lockHint} onChange={(e) => setLockHint(e.target.value)} placeholder="Lock preference — e.g. flexible, 90-day lock, long-horizon" maxLength={50} />
+          <span className="ce-mono" style={{ fontSize: 10, color: "var(--faint)" }}>
+            The council weighs this alongside live conditions to set your yield band and tier — it's a preference, not a binding term.
+          </span>
+          <button className="ce-btn" onClick={stake} disabled={!canStake} style={{ alignSelf: "flex-start" }}>
             {tx.phase === "deliberating" ? "Staking…" : "Stake"}
           </button>
           {tx.phase !== "idle" && <TxStatus tx={tx} onDismiss={reset} />}
@@ -105,6 +116,11 @@ export default function StakingPage() {
           <span className="ce-h2" style={{ fontSize: 16, margin: 0 }}>Open positions</span>
           <span className="ce-section-label">{loading ? "Reading onchain…" : `${active.length} active`}</span>
         </div>
+        {unstakeError && (
+          <div className="ce-mono" style={{ padding: "10px 24px", fontSize: 11, color: "var(--clay)", borderBottom: "1px solid var(--line-soft)" }}>
+            {unstakeError}
+          </div>
+        )}
         {active.length === 0 ? (
           <EmptyState>
             {degraded
@@ -112,28 +128,41 @@ export default function StakingPage() {
               : "No positions yet. Open the first one above."}
           </EmptyState>
         ) : (
-          active.map((p: StakePosition) => (
-            <div
-              key={p.id}
-              className="ce-table-row"
-              style={{
-                display: "grid",
-                gridTemplateColumns: "90px 1fr 120px 100px 110px",
-                gap: 12,
-                padding: "13px 24px",
-                borderBottom: "1px solid var(--line-soft)",
-                alignItems: "center",
-                fontFamily: "var(--font-mono), monospace",
-                fontSize: 12,
-              }}
-            >
-              <span style={{ color: "var(--faint)" }}>{p.id}</span>
-              <span style={{ color: "var(--muted)" }}>{shortAddr(p.staker)}</span>
-              <span style={{ color: "var(--text)" }}>{p.amount.toLocaleString()} cGEN</span>
-              <span style={{ color: "var(--primary)" }}>{(p.apr_bps / 100).toFixed(2)}%</span>
-              <Tag tone={p.tier}>{p.tier}</Tag>
-            </div>
-          ))
+          active.map((p: StakePosition) => {
+            const isMine = !!address && p.staker.toLowerCase() === address.toLowerCase();
+            return (
+              <div
+                key={p.id}
+                className="ce-table-row"
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "90px 1fr 120px 100px 90px 90px",
+                  gap: 12,
+                  padding: "13px 24px",
+                  borderBottom: "1px solid var(--line-soft)",
+                  alignItems: "center",
+                  fontFamily: "var(--font-mono), monospace",
+                  fontSize: 12,
+                }}
+              >
+                <span style={{ color: "var(--faint)" }}>{p.id}</span>
+                <span style={{ color: "var(--muted)" }}>{shortAddr(p.staker)}</span>
+                <span style={{ color: "var(--text)" }}>{p.amount.toLocaleString()} cGEN</span>
+                <span style={{ color: "var(--primary)" }}>{(p.apr_bps / 100).toFixed(2)}%</span>
+                <Tag tone={p.tier}>{p.tier}</Tag>
+                {isMine ? (
+                  <button
+                    className="ce-btn ce-btn-ghost"
+                    style={{ fontSize: 11, padding: "5px 10px", justifySelf: "end" }}
+                    onClick={() => doUnstake(p.id)}
+                    disabled={unstakingId === p.id}
+                  >
+                    {unstakingId === p.id ? "…" : "Unstake"}
+                  </button>
+                ) : <span />}
+              </div>
+            );
+          })
         )}
       </Panel>
     </AppShell>

@@ -4,18 +4,24 @@ import { useState } from "react";
 import { AppShell } from "@/components/compax/AppShell";
 import { PageHead, StatTile, Panel, EmptyState, Tag } from "@/components/compax/primitives";
 import { TxStatus, useTxStatus } from "@/components/compax/TxStatus";
-import { useAllMarkets, useTotalVolume, useContractWrite, type MarketData } from "@/hooks/useContract";
+import { useAllMarkets, useTotalVolume, useContractWrite, useMarketStake, type MarketData } from "@/hooks/useContract";
+import { useWallet } from "@/hooks/useWallet";
 
 export default function PredictionsPage() {
   const { data: markets, loading, error, refetch } = useAllMarkets();
   const { data: totalVolume } = useTotalVolume();
   const { execute, loading: writing } = useContractWrite();
   const { tx, run, reset } = useTxStatus();
+  const { address, connected } = useWallet();
 
   const [selected, setSelected] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [question, setQuestion] = useState("");
   const [resDate, setResDate] = useState("");
+  const [stakeAmount, setStakeAmount] = useState("");
+  const [stakePosition, setStakePosition] = useState<"yes" | "no">("yes");
+
+  const { data: myStake, refetch: refetchStake } = useMarketStake(selected || "", address || "");
 
   const degraded = !!error && /not found|timeout|unreachable/i.test(error);
   const selectedM = markets.find((m) => m.id === selected);
@@ -33,6 +39,20 @@ export default function PredictionsPage() {
   const resolveMarket = async (id: string) => {
     await run(() => execute("PredictionMarkets", "resolve_market", [id]));
     refetch();
+  };
+
+  const placeStake = async () => {
+    if (!selected || !stakeAmount || Number(stakeAmount) <= 0) return;
+    const r = await run(() =>
+      execute("PredictionMarkets", "stake", [selected, stakePosition], BigInt(stakeAmount)),
+    );
+    if (r.ok) { setStakeAmount(""); refetch(); refetchStake(); }
+  };
+
+  const claimWinnings = async () => {
+    if (!selected) return;
+    await run(() => execute("PredictionMarkets", "claim_winnings", [selected]));
+    refetchStake();
   };
 
   const pct = (m: MarketData) => {
@@ -125,6 +145,72 @@ export default function PredictionsPage() {
                 <Tag tone={selectedM.status === "active" ? "standard" : "active"}>{selectedM.status === "active" ? "OPEN" : "RESOLVED"}</Tag>
               </div>
               <div className="ce-serif" style={{ fontSize: 18, fontStyle: "italic", lineHeight: 1.45, color: "var(--text)" }}>“{selectedM.question}”</div>
+
+              {selectedM.status === "active" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, borderTop: "1px solid var(--line-soft)", paddingTop: 14 }}>
+                  <span className="ce-section-label">
+                    {myStake?.position ? `Your position — ${myStake.position.toUpperCase()} · ${(myStake.amount ?? 0).toLocaleString()} cGEN` : "Stake a position"}
+                  </span>
+                  {!connected ? (
+                    <span style={{ fontSize: 12.5, color: "var(--faint)" }}>Connect a wallet to stake.</span>
+                  ) : (
+                    <>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button
+                          className={`ce-tab${stakePosition === "yes" ? " ce-tab-active" : ""}`}
+                          onClick={() => setStakePosition("yes")}
+                          disabled={!!myStake?.position && myStake.position !== "yes"}
+                        >
+                          YES
+                        </button>
+                        <button
+                          className={`ce-tab${stakePosition === "no" ? " ce-tab-active" : ""}`}
+                          onClick={() => setStakePosition("no")}
+                          disabled={!!myStake?.position && myStake.position !== "no"}
+                        >
+                          NO
+                        </button>
+                      </div>
+                      <div style={{ display: "flex", gap: 10 }}>
+                        <input className="ce-input" type="number" min={1} value={stakeAmount} onChange={(e) => setStakeAmount(e.target.value)} placeholder="Amount (cGEN)" />
+                        <button className="ce-btn" onClick={placeStake} disabled={writing || tx.phase === "deliberating" || !stakeAmount}>
+                          {tx.phase === "deliberating" ? "Staking…" : "Stake"}
+                        </button>
+                      </div>
+                      {myStake?.position && (
+                        <span className="ce-mono" style={{ fontSize: 10, color: "var(--faint)" }}>
+                          You've already staked {myStake.position.toUpperCase()} on this market — you can add to it but not switch sides.
+                        </span>
+                      )}
+                    </>
+                  )}
+                  {tx.phase !== "idle" && <TxStatus tx={tx} onDismiss={reset} />}
+                </div>
+              )}
+
+              {selectedM.status === "resolved" && connected && myStake?.position && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, borderTop: "1px solid var(--line-soft)", paddingTop: 14 }}>
+                  <span className="ce-section-label">Your stake</span>
+                  {myStake.claimed ? (
+                    <span style={{ fontSize: 12.5, color: "var(--faint)" }}>Already claimed.</span>
+                  ) : myStake.position === selectedM.outcome ? (
+                    <>
+                      <span style={{ fontSize: 12.5, color: "var(--muted)" }}>
+                        You staked {myStake.position.toUpperCase()} · {(myStake.amount ?? 0).toLocaleString()} cGEN — winning side.
+                      </span>
+                      <button className="ce-btn" onClick={claimWinnings} disabled={writing || tx.phase === "deliberating"} style={{ alignSelf: "flex-start" }}>
+                        {tx.phase === "deliberating" ? "Claiming…" : "Claim winnings"}
+                      </button>
+                    </>
+                  ) : (
+                    <span style={{ fontSize: 12.5, color: "var(--faint)" }}>
+                      You staked {myStake.position.toUpperCase()} — resolved {(selectedM.outcome || "").toUpperCase()}. Nothing to claim.
+                    </span>
+                  )}
+                  {tx.phase !== "idle" && <TxStatus tx={tx} onDismiss={reset} />}
+                </div>
+              )}
+
               {selectedM.resolution_reasoning ? (
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   <span className="ce-section-label">Reasoning</span>

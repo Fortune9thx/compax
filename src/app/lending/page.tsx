@@ -6,10 +6,6 @@ import { PageHead, StatTile, Panel, EmptyState, Tag } from "@/components/compax/
 import { TxStatus, useTxStatus } from "@/components/compax/TxStatus";
 import { useAllLoans, useTotalBorrowed, useLoanCount, useContractWrite, type LoanData } from "@/hooks/useContract";
 
-const AMOUNTS = [25000, 50000, 120000];
-const TERMS = [30, 90, 180];
-const COLLATERAL = ["reputation only", "10% reserve bond", "milestone escrow"];
-
 function statusTone(s: string) {
   return s === "approved" ? "active" : s === "repaid" ? "standard" : "provisional";
 }
@@ -21,22 +17,23 @@ export default function LendingPage() {
   const { execute, loading: writing } = useContractWrite();
   const { tx, run, reset } = useTxStatus();
 
-  const [amtIdx, setAmtIdx] = useState(0);
-  const [termIdx, setTermIdx] = useState(1);
-  const [colIdx, setColIdx] = useState(0);
+  const [amount, setAmount] = useState("");
+  const [days, setDays] = useState("");
+  const [purpose, setPurpose] = useState("");
+  const [description, setDescription] = useState("");
 
   const degraded = !!error && /not found|timeout|unreachable/i.test(error);
+  const canSubmit = !!amount && !!days && !!purpose.trim() && !!description.trim() && !writing && tx.phase !== "deliberating";
 
   const submit = async () => {
-    await run(() =>
-      execute("LendingMarket", "request_loan", [
-        AMOUNTS[amtIdx],
-        TERMS[termIdx],
-        COLLATERAL[colIdx],
-        `Loan request: ${AMOUNTS[amtIdx].toLocaleString()} cGEN for ${TERMS[termIdx]} days, backed by ${COLLATERAL[colIdx]}`,
-      ]),
+    if (!canSubmit) return;
+    const r = await run(() =>
+      execute("LendingMarket", "request_loan", [parseInt(amount), parseInt(days), purpose.trim(), description.trim()]),
     );
-    refetch();
+    if (r.ok) {
+      setAmount(""); setDays(""); setPurpose(""); setDescription("");
+      refetch();
+    }
   };
 
   return (
@@ -53,17 +50,23 @@ export default function LendingPage() {
       </div>
 
       <div className="ce-grid ce-2col" style={{ gridTemplateColumns: "1fr 1.2fr", alignItems: "start", marginBottom: 28 }}>
-        <Panel style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+        <Panel style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <span className="ce-section-label">New request</span>
-          <div className="ce-serif" style={{ fontSize: 22, lineHeight: 1.65, fontStyle: "italic", color: "var(--text)" }}>
-            I need{" "}
-            <button className="ce-slot" onClick={() => setAmtIdx((amtIdx + 1) % AMOUNTS.length)}>{AMOUNTS[amtIdx].toLocaleString()} cGEN</button>{" "}
-            for{" "}
-            <button className="ce-slot" onClick={() => setTermIdx((termIdx + 1) % TERMS.length)}>{TERMS[termIdx]} days</button>
-            , backed by{" "}
-            <button className="ce-slot" onClick={() => setColIdx((colIdx + 1) % COLLATERAL.length)}>{COLLATERAL[colIdx]}</button>.
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <input className="ce-input" type="number" min={1} value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Amount (cGEN)" />
+            <input className="ce-input" type="number" min={1} max={3650} value={days} onChange={(e) => setDays(e.target.value)} placeholder="Duration (days)" />
           </div>
-          <button className="ce-btn" onClick={submit} disabled={writing || tx.phase === "deliberating"} style={{ alignSelf: "flex-start" }}>
+          <input className="ce-input" value={purpose} onChange={(e) => setPurpose(e.target.value)} placeholder="Purpose — e.g. bridge financing, inventory" maxLength={200} />
+          <textarea
+            className="ce-input"
+            style={{ resize: "vertical" }}
+            rows={3}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Describe the request — collateral, repayment plan, context the council should weigh"
+            maxLength={400}
+          />
+          <button className="ce-btn" onClick={submit} disabled={!canSubmit} style={{ alignSelf: "flex-start" }}>
             {tx.phase === "deliberating" ? "Submitting…" : "Submit request"}
           </button>
           {tx.phase !== "idle" && <TxStatus tx={tx} onDismiss={reset} />}
