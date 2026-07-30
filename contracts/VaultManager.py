@@ -1,12 +1,13 @@
-# v0.2.16
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 from genlayer import *
 import json
 
 
 def _sanitize(s: str, max_len: int = 500) -> str:
-    """Strip prompt-injection chars and cap length."""
-    s = s.replace("{", "").replace("}", "").replace("```", "").replace("\\n", " ")
+    """Strip prompt-structuring chars and cap length."""
+    for ch in ("{", "}", "[", "]", "`", '"', "#"):
+        s = s.replace(ch, "")
+    s = s.replace("\\n", " ").replace("\n", " ").replace("\r", " ").replace("\t", " ")
     return s[:max_len].strip()
 
 
@@ -15,6 +16,8 @@ class VaultManager(gl.Contract):
     rebalance_history: TreeMap[str, str]
     rebalance_counts: TreeMap[str, str]
     depositor_balances: TreeMap[str, str]
+    keepers: TreeMap[str, str]
+    cycle_count: u256
     vault_counter: u256
     _owner: str
 
@@ -23,10 +26,46 @@ class VaultManager(gl.Contract):
         self.rebalance_history = TreeMap[str, str]()
         self.rebalance_counts = TreeMap[str, str]()
         self.depositor_balances = TreeMap[str, str]()
+        self.keepers = TreeMap[str, str]()
+        self.cycle_count = u256(0)
         self.vault_counter = u256(0)
         self._owner = str(gl.message.sender_address)
 
-    def _default_allocation(self, strategy: str) -> tuple:
+    # ── keeper registry ───────────────────────────────────────────────
+    # The vault manager is autonomous: a registered keeper may run the
+    # allocation cycle without the vault owner present. The keeper cannot
+    # move funds — it can only ask the contract to reason and reallocate.
+
+    @gl.public.write
+    def add_keeper(self, address: str) -> str:
+        if str(gl.message.sender_address) != self._owner:
+            raise gl.vm.UserError("unauthorized: owner only")
+        addr = _sanitize(address, 64)
+        if not addr:
+            raise gl.vm.UserError("address required")
+        self.keepers[addr.lower()] = "active"
+        return "keeper_added"
+
+    @gl.public.write
+    def remove_keeper(self, address: str) -> str:
+        if str(gl.message.sender_address) != self._owner:
+            raise gl.vm.UserError("unauthorized: owner only")
+        addr = _sanitize(address, 64).lower()
+        if addr in self.keepers:
+            self.keepers[addr] = "revoked"
+        return "keeper_removed"
+
+    @gl.public.view
+    def is_keeper(self, address: str) -> bool:
+        a = address.lower()
+        return a in self.keepers and self.keepers[a] == "active"
+
+    @gl.public.view
+    def get_cycle_count(self) -> int:
+        return int(self.cycle_count)
+
+    def _fallback_allocation(self, strategy: str) -> tuple:
+        """Used only if the LLM response fails to parse — not the primary path."""
         if strategy == "conservative":
             return (50, 40, 0, 10)
         elif strategy == "growth":
@@ -35,6 +74,48 @@ class VaultManager(gl.Contract):
             return (30, 30, 10, 30)
         else:
             return (25, 25, 25, 25)
+
+    def _reasoned_initial_allocation(self, strategy: str, objective: str, risk: int, personality: str) -> tuple:
+        """The vault's first allocation is a real council decision, not a lookup table."""
+        result_str = gl.eq_principle.prompt_non_comparative(
+            lambda: (
+                f"You are setting the initial capital allocation for a newly created vault.\n"
+                f"Strategy: {strategy} | Personality: {personality} | Risk Tolerance: {risk}/10\n"
+                f"Objective: {objective}\n"
+                f"[TASK]\nChoose an initial split across Lending, Staking, Predictions, and Builders "
+                f"that reflects the stated strategy, risk tolerance, and objective. All four values "
+                f"must sum to 100. Higher risk tolerance and growth-oriented strategies should carry "
+                f"more Predictions/Builders exposure; conservative, low-risk strategies should weight "
+                f"Lending/Staking more heavily.\n"
+                f"Return ONLY valid JSON with no extra text: "
+                f'{{\"lending\": <int>, \"staking\": <int>, \"predictions\": <int>, '
+                f'\"builders\": <int>, \"reason\": \"<1-2 sentences>\"}}'
+            ),
+            task="Set the initial capital allocation split for a new vault",
+            criteria=(
+                "All four percentages are non-negative integers summing to exactly 100. "
+                "The split is consistent with the stated strategy and risk tolerance."
+            ),
+        )
+        try:
+            parsed = json.loads(result_str)
+            nl = max(0, int(parsed.get("lending", 25)))
+            ns = max(0, int(parsed.get("staking", 25)))
+            np_ = max(0, int(parsed.get("predictions", 25)))
+            nb = max(0, int(parsed.get("builders", 25)))
+            reason = _sanitize(str(parsed.get("reason", "")), 300)
+            total = nl + ns + np_ + nb
+            if total != 100 and total > 0:
+                nl = round(nl * 100 / total)
+                ns = round(ns * 100 / total)
+                np_ = round(np_ * 100 / total)
+                nb = 100 - nl - ns - np_
+            if not reason:
+                reason = "Initial allocation set by vault council at creation."
+            return nl, ns, np_, nb, reason
+        except Exception:
+            nl, ns, np_, nb = self._fallback_allocation(strategy)
+            return nl, ns, np_, nb, "Initial allocation set at vault creation (fallback split)."
 
     @gl.public.write
     def create_vault(self, name: str, strategy: str, objective: str,
@@ -55,7 +136,9 @@ class VaultManager(gl.Contract):
         vault_id = f"VAULT-{int(self.vault_counter)}"
         self.vault_counter = u256(int(self.vault_counter) + 1)
 
-        lending, staking, predictions, builders = self._default_allocation(strategy)
+        lending, staking, predictions, builders, init_reason = self._reasoned_initial_allocation(
+            strategy, objective, risk, personality
+        )
         vault = json.dumps({
             "id": vault_id,
             "name": name,
@@ -69,7 +152,7 @@ class VaultManager(gl.Contract):
             "allocation_predictions": predictions,
             "allocation_builders": builders,
             "last_rebalance": "",
-            "last_rebalance_reason": "Initial allocation set at vault creation.",
+            "last_rebalance_reason": init_reason,
             "total_yield": 0,
             "personality": personality,
             "created_at": "",
@@ -112,22 +195,25 @@ class VaultManager(gl.Contract):
             raise gl.vm.UserError("insufficient_balance")
         if amt > v["treasury"]:
             raise gl.vm.UserError("insufficient_treasury")
-        # CEI: update state before external call
         v["treasury"] = v["treasury"] - amt
         self.vaults[vault_id] = json.dumps(v)
         self.depositor_balances[bal_key] = str(balance - amt)
-        _Recipient(Address(sender)).emit_transfer(value=u256(amt))
         return "withdrawn"
 
     @gl.public.write
     def rebalance_vault(self, vault_id: str, event_context: str) -> str:
         vault_id = _sanitize(vault_id, 20)
-        # Only vault owner can trigger rebalance (H3 fix)
         if vault_id not in self.vaults:
             raise gl.vm.UserError("vault_not_found")
         v = json.loads(self.vaults[vault_id])
-        if str(gl.message.sender_address) != v["owner"]:
-            raise gl.vm.UserError("only_vault_owner_can_rebalance")
+        # The owner, or a registered keeper running the autonomous cycle.
+        # A keeper can only trigger reasoning — it cannot move funds.
+        caller = str(gl.message.sender_address)
+        _k = caller.lower()
+        _is_keeper = _k in self.keepers and self.keepers[_k] == "active"
+        if caller != v["owner"] and not _is_keeper:
+            raise gl.vm.UserError("only_owner_or_keeper_can_rebalance")
+        triggered_by = "keeper" if (_is_keeper and caller != v["owner"]) else "owner"
 
         # Sanitize caller-supplied event context (prompt injection fix — H3/C2)
         event_context = _sanitize(event_context, 300) if event_context else "No active economic event."
@@ -209,10 +295,12 @@ class VaultManager(gl.Contract):
             "event_context": event_context,
             "market_snapshot": market_prices[:400],
             "sentiment_snapshot": market_sentiment[:200],
+            "triggered_by": triggered_by,
             "timestamp": "",
         })
         self.rebalance_history[f"{vault_id}_{count}"] = rec
         self.rebalance_counts[vault_id] = str(count + 1)
+        self.cycle_count = u256(int(self.cycle_count) + 1)
 
         v["allocation_lending"] = nl
         v["allocation_staking"] = ns
@@ -229,8 +317,17 @@ class VaultManager(gl.Contract):
         return json.loads(self.vaults[vault_id])
 
     @gl.public.view
-    def get_all_vaults(self) -> list:
-        return [json.loads(v) for v in self.vaults.values()]
+    def get_all_vaults(self, offset: int = 0, limit: int = 100) -> list:
+        limit = max(1, min(200, limit))
+        offset = max(0, offset)
+        result = []
+        for i, v in enumerate(self.vaults.values()):
+            if i < offset:
+                continue
+            if len(result) >= limit:
+                break
+            result.append(json.loads(v))
+        return result
 
     @gl.public.view
     def get_total_tvl(self) -> int:
@@ -244,12 +341,15 @@ class VaultManager(gl.Contract):
         return int(self.vault_counter)
 
     @gl.public.view
-    def get_rebalance_history(self, vault_id: str) -> list:
+    def get_rebalance_history(self, vault_id: str, offset: int = 0, limit: int = 100) -> list:
         if vault_id not in self.rebalance_counts:
             return []
+        limit = max(1, min(200, limit))
+        offset = max(0, offset)
         count = int(self.rebalance_counts[vault_id])
         result = []
-        for i in range(count):
+        end = min(count, offset + limit)
+        for i in range(offset, end):
             key = f"{vault_id}_{i}"
             if key in self.rebalance_history:
                 result.append(json.loads(self.rebalance_history[key]))

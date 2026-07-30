@@ -1,11 +1,12 @@
-# v0.2.16
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 from genlayer import *
 import json
 
 
 def _sanitize(s: str, max_len: int = 300) -> str:
-    s = s.replace("{", "").replace("}", "").replace("```", "").replace("\\n", " ")
+    for ch in ("{", "}", "[", "]", "`", '"', "#"):
+        s = s.replace(ch, "")
+    s = s.replace("\\n", " ").replace("\n", " ").replace("\r", " ").replace("\t", " ")
     return s[:max_len].strip()
 
 
@@ -87,45 +88,80 @@ class ReputationSystem(gl.Contract):
         self.history[f"{address}_{count}"] = ev
         self.history_counts[address] = str(count + 1)
 
+    def _reasoned_delta(self, category: str, outcome: str, context: str, lo: int, hi: int, default: int) -> tuple:
+        """Weigh the reputation delta by severity/context instead of a fixed constant."""
+        ctx = context if context else "no additional context provided"
+
+        result_str = gl.eq_principle.prompt_non_comparative(
+            lambda: (
+                f"You are updating a user's onchain reputation after a {category} action.\n"
+                f"Outcome: {outcome}\n"
+                f"Context: {ctx}\n"
+                f"[TASK]\nAssign a reputation delta as an integer between {lo} and {hi} that reflects "
+                f"the severity or quality of this specific outcome (e.g. a default after months of "
+                f"non-payment is worse than a payment one day late; a project delivered far ahead of "
+                f"schedule deserves more than one barely completed).\n"
+                f"Return ONLY valid JSON with no extra text: "
+                f'{{\"delta\": <int>, \"reason\": \"<one concise sentence>\"}}'
+            ),
+            task="Assign a reputation score delta for a financial action outcome",
+            criteria=f"delta is an integer between {lo} and {hi} inclusive. reason is a single concise sentence.",
+        )
+        try:
+            parsed = json.loads(result_str)
+            delta = max(lo, min(hi, int(parsed.get("delta", default))))
+            reason = _sanitize(str(parsed.get("reason", outcome)), 200)
+        except Exception:
+            delta, reason = default, outcome
+        return delta, reason
+
     # Score-recording methods — restricted to trusted callers only (C1 fix)
     @gl.public.write
-    def record_loan_repayment(self, borrower: str, on_time: bool) -> str:
+    def record_loan_repayment(self, borrower: str, on_time: bool, context: str = "") -> str:
         self._only_trusted()
         borrower = _sanitize(borrower, 42)
+        context = _sanitize(context, 200)
         if on_time:
-            self._add_score(borrower, 50, "loan", "Loan repaid on time")
+            delta, reason = self._reasoned_delta("loan", "repaid on time", context, 10, 80, 50)
         else:
-            self._add_score(borrower, -100, "loan", "Loan repaid late or defaulted")
+            delta, reason = self._reasoned_delta("loan", "repaid late or defaulted", context, -150, -10, -100)
+        self._add_score(borrower, delta, "loan", reason)
         return "recorded"
 
     @gl.public.write
-    def record_funding_repayment(self, applicant: str, success: bool) -> str:
+    def record_funding_repayment(self, applicant: str, success: bool, context: str = "") -> str:
         self._only_trusted()
         applicant = _sanitize(applicant, 42)
+        context = _sanitize(context, 200)
         if success:
-            self._add_score(applicant, 80, "funding", "Builder project delivered successfully")
+            delta, reason = self._reasoned_delta("funding", "project delivered successfully", context, 20, 120, 80)
         else:
-            self._add_score(applicant, -150, "funding", "Builder project failed to deliver")
+            delta, reason = self._reasoned_delta("funding", "project failed to deliver", context, -200, -20, -150)
+        self._add_score(applicant, delta, "funding", reason)
         return "recorded"
 
     @gl.public.write
-    def record_prediction_outcome(self, user: str, correct: bool) -> str:
+    def record_prediction_outcome(self, user: str, correct: bool, context: str = "") -> str:
         self._only_trusted()
         user = _sanitize(user, 42)
+        context = _sanitize(context, 200)
         if correct:
-            self._add_score(user, 30, "prediction", "Prediction resolved correctly")
+            delta, reason = self._reasoned_delta("prediction", "resolved correctly", context, 10, 60, 30)
         else:
-            self._add_score(user, -10, "prediction", "Prediction resolved incorrectly")
+            delta, reason = self._reasoned_delta("prediction", "resolved incorrectly", context, -30, -5, -10)
+        self._add_score(user, delta, "prediction", reason)
         return "recorded"
 
     @gl.public.write
-    def record_vault_performance(self, owner: str, yield_positive: bool) -> str:
+    def record_vault_performance(self, owner: str, yield_positive: bool, context: str = "") -> str:
         self._only_trusted()
         owner = _sanitize(owner, 42)
+        context = _sanitize(context, 200)
         if yield_positive:
-            self._add_score(owner, 20, "vault", "Vault generated positive yield")
+            delta, reason = self._reasoned_delta("vault", "generated positive yield", context, 5, 50, 20)
         else:
-            self._add_score(owner, -5, "vault", "Vault yield below target")
+            delta, reason = self._reasoned_delta("vault", "yield below target", context, -20, -1, -5)
+        self._add_score(owner, delta, "vault", reason)
         return "recorded"
 
     @gl.public.write
@@ -158,12 +194,15 @@ class ReputationSystem(gl.Contract):
         return json.loads(self.scores[address])
 
     @gl.public.view
-    def get_history(self, address: str) -> list:
+    def get_history(self, address: str, offset: int = 0, limit: int = 100) -> list:
         if address not in self.history_counts:
             return []
+        limit = max(1, min(200, limit))
+        offset = max(0, offset)
         count = int(self.history_counts[address])
         result = []
-        for i in range(count):
+        end = min(count, offset + limit)
+        for i in range(offset, end):
             key = f"{address}_{i}"
             if key in self.history:
                 result.append(json.loads(self.history[key]))

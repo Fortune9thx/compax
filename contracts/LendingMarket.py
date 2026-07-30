@@ -1,11 +1,12 @@
-# v0.2.16
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 from genlayer import *
 import json
 
 
 def _sanitize(s: str, max_len: int = 500) -> str:
-    s = s.replace("{", "").replace("}", "").replace("```", "").replace("\\n", " ")
+    for ch in ("{", "}", "[", "]", "`", '"', "#"):
+        s = s.replace(ch, "")
+    s = s.replace("\\n", " ").replace("\n", " ").replace("\r", " ").replace("\t", " ")
     return s[:max_len].strip()
 
 
@@ -139,16 +140,34 @@ class LendingMarket(gl.Contract):
         return json.loads(self.loans[loan_id])
 
     @gl.public.view
-    def get_all_loans(self) -> list:
-        return [json.loads(v) for v in self.loans.values()]
+    def get_all_loans(self, offset: int = 0, limit: int = 100) -> list:
+        limit = max(1, min(200, limit))
+        offset = max(0, offset)
+        result = []
+        for i, v in enumerate(self.loans.values()):
+            if i < offset:
+                continue
+            if len(result) >= limit:
+                break
+            result.append(json.loads(v))
+        return result
 
     @gl.public.view
-    def get_all_active_loans(self) -> list:
+    def get_all_active_loans(self, offset: int = 0, limit: int = 100) -> list:
+        limit = max(1, min(200, limit))
+        offset = max(0, offset)
         result = []
+        skipped = 0
         for v in self.loans.values():
             l = json.loads(v)
-            if l["status"] == "approved":
-                result.append(l)
+            if l["status"] != "approved":
+                continue
+            if skipped < offset:
+                skipped += 1
+                continue
+            if len(result) >= limit:
+                break
+            result.append(l)
         return result
 
     @gl.public.view
