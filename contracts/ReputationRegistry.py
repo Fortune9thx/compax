@@ -290,7 +290,10 @@ class ReputationRegistry(gl.Contract):
         if not line:
             raise gl.vm.UserError("credit_line_not_found")
         status = str(line.get("status", ""))
-        if status not in ("repaid", "defaulted"):
+        # "repaid" = borrower paid in full. "resolved" = a contested default was
+        # adjudicated by resolve_default(), which splits collateral between lender
+        # and borrower (see CreditLine.resolve_default). Both are final states.
+        if status not in ("repaid", "resolved"):
             raise gl.vm.UserError("credit_line_not_finalized")
 
         borrower = str(line.get("borrower", ""))
@@ -300,15 +303,20 @@ class ReputationRegistry(gl.Contract):
         reasoning = _sanitize(str(line.get("ai_reasoning", "")), 300)
         collateral_amount = int(line.get("collateral_amount", 0))
         collateral_to_lender = int(line.get("collateral_to_lender", 0))
+        collateral_to_borrower = int(line.get("collateral_to_borrower", 0))
         context = (
             f"Status: {status}. Collateral: {collateral_amount}, "
-            f"{collateral_to_lender} claimed by lender on default. Adjudicator reasoning: {reasoning}"
+            f"{collateral_to_lender} to lender / {collateral_to_borrower} to borrower on adjudication. "
+            f"Adjudicator reasoning: {reasoning}"
         )
 
         if status == "repaid":
             delta, reason = self._reasoned_delta("credit", "credit obligation fully repaid", context, 10, 80, 35)
+        elif collateral_amount > 0 and collateral_to_borrower >= collateral_amount:
+            # adjudicated fully in the borrower's favor — treat like a clean resolution, not a penalty
+            delta, reason = self._reasoned_delta("credit", "contested default adjudicated in borrower's favor", context, -10, 30, 5)
         else:
-            delta, reason = self._reasoned_delta("credit", "defaulted, collateral claimed", context, -200, -20, -100)
+            delta, reason = self._reasoned_delta("credit", "contested default adjudicated against borrower, collateral claimed", context, -200, -20, -100)
 
         self._apply_delta(borrower, delta, "credit", reason)
         self.claimed[claim_key] = "claimed"

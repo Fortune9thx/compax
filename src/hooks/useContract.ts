@@ -206,6 +206,26 @@ export function useReputationHistory(address: string, offset = 0, limit = 100) {
 export function useIsTrustedSource(address: string, category: string) {
   return useContractRead<boolean>("ReputationRegistry", "is_trusted_source", [address, category], false);
 }
+export function useIsKeeper(address: string) {
+  return useContractRead<boolean>("ReputationRegistry", "is_keeper", [address], false);
+}
+export function useIsVaultKeeper(address: string) {
+  return useContractRead<boolean>("VaultManager", "is_keeper", [address], false);
+}
+
+// Claim keys mirror ReputationRegistry.py exactly (lowercased contract address).
+export function escrowClaimKey(escrowAddress: string, escrowId: string) {
+  return `escrow_${escrowAddress.toLowerCase()}_${escrowId}`;
+}
+export function predictionClaimKey(marketAddress: string, marketId: string, user: string) {
+  return `prediction_${marketAddress.toLowerCase()}_${marketId}_${user.toLowerCase()}`;
+}
+export function creditClaimKey(creditAddress: string, lineId: string) {
+  return `credit_${creditAddress.toLowerCase()}_${lineId}`;
+}
+export function useIsClaimed(claimKey: string) {
+  return useContractRead<boolean>("ReputationRegistry", "is_claimed", [claimKey], false);
+}
 
 // ─── EscrowAdjudicator ───────────────────────────────────────────────────
 

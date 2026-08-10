@@ -12,8 +12,10 @@ import { Modal } from "@/components/ui/Modal";
 import { EmptyState, SkeletonGrid, ErrorBanner } from "@/components/ui/States";
 import { DeliberationTheater } from "@/components/deliberation/DeliberationTheater";
 import { useDeliberation } from "@/hooks/useDeliberation";
-import { useAllCreditLines, useCreditLine, type CreditLineData } from "@/hooks/useContract";
+import { useAllCreditLines, useCreditLine, useContractWrite, useIsClaimed, creditClaimKey, type CreditLineData } from "@/hooks/useContract";
 import { useWallet } from "@/hooks/useWallet";
+import { CONTRACTS } from "@/lib/contracts";
+import { AppealStatus } from "@/components/deliberation/AppealStatus";
 
 export default function CreditPage() {
   const { data: lines, loading, error, refetch } = useAllCreditLines(0, 100);
@@ -178,7 +180,45 @@ function CreditLineModal({ lineId, onClose, onChanged }: { lineId: string; onClo
             <Button className="w-full" onClick={doResolveDefault} disabled={state.phase === "deliberating"}>Resolve</Button>
           </div>
         )}
+
+        {(l.status === "repaid" || l.status === "resolved") && state.phase === "idle" && (
+          <div className="pt-2 border-t border-border">
+            <AppealStatus />
+          </div>
+        )}
+
+        {(l.status === "repaid" || l.status === "resolved") && isBorrower && (
+          <div className="space-y-2 pt-2 border-t border-border">
+            <p className="text-xs text-text-muted">Pull this outcome into your onchain reputation record.</p>
+            <ClaimCreditReputationButton lineId={lineId} />
+          </div>
+        )}
       </div>
     </Modal>
+  );
+}
+
+function ClaimCreditReputationButton({ lineId }: { lineId: string }) {
+  const { execute, loading } = useContractWrite();
+  const claimKey = creditClaimKey(CONTRACTS.CreditLine, lineId);
+  const { data: alreadyClaimed, refetch: refetchClaimed } = useIsClaimed(claimKey);
+  const [err, setErr] = useState<string | null>(null);
+
+  const claim = async () => {
+    setErr(null);
+    try {
+      await execute("ReputationRegistry", "record_from_credit", [CONTRACTS.CreditLine, lineId]);
+      refetchClaimed();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  if (alreadyClaimed) return <p className="text-xs text-success">Reputation claimed.</p>;
+  return (
+    <div>
+      <Button size="sm" onClick={claim} disabled={loading}>{loading ? "Claiming…" : "Claim reputation update"}</Button>
+      {err && <p className="text-xs text-danger mt-2">{err}</p>}
+    </div>
   );
 }

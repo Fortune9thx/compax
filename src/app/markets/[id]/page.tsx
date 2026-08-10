@@ -11,8 +11,10 @@ import { Input, Textarea } from "@/components/ui/Input";
 import { EmptyState } from "@/components/ui/States";
 import { DeliberationTheater } from "@/components/deliberation/DeliberationTheater";
 import { useDeliberation } from "@/hooks/useDeliberation";
-import { useMarket, useMarketUserStake, useMarketChallenges } from "@/hooks/useContract";
+import { useMarket, useMarketUserStake, useMarketChallenges, useContractWrite, useIsClaimed, predictionClaimKey } from "@/hooks/useContract";
 import { useWallet } from "@/hooks/useWallet";
+import { CONTRACTS } from "@/lib/contracts";
+import { AppealStatus } from "@/components/deliberation/AppealStatus";
 
 export default function MarketDetailPage() {
   const params = useParams();
@@ -110,6 +112,12 @@ export default function MarketDetailPage() {
         </div>
       )}
 
+      {market.status === "resolved" && state.phase === "idle" && (
+        <div className="mb-6">
+          <AppealStatus />
+        </div>
+      )}
+
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="space-y-6">
           {market.status === "active" && (
@@ -187,6 +195,16 @@ export default function MarketDetailPage() {
               )}
             </Card>
           )}
+
+          {market.status === "resolved" && myStake.position && address && (
+            <Card>
+              <CardLabel>Reputation</CardLabel>
+              <p className="text-xs text-text-secondary mt-2 mb-4">
+                Pull this outcome into your onchain reputation record based on whether your staked position matched the resolved outcome.
+              </p>
+              <ClaimMarketReputationButton marketId={marketId} userAddress={address} />
+            </Card>
+          )}
         </div>
 
         <Card className="p-0 overflow-hidden self-start">
@@ -206,5 +224,30 @@ export default function MarketDetailPage() {
         </Card>
       </div>
     </AppShell>
+  );
+}
+
+function ClaimMarketReputationButton({ marketId, userAddress }: { marketId: string; userAddress: string }) {
+  const { execute, loading } = useContractWrite();
+  const claimKey = predictionClaimKey(CONTRACTS.PredictionMarket, marketId, userAddress);
+  const { data: alreadyClaimed, refetch: refetchClaimed } = useIsClaimed(claimKey);
+  const [err, setErr] = useState<string | null>(null);
+
+  const claim = async () => {
+    setErr(null);
+    try {
+      await execute("ReputationRegistry", "record_from_prediction", [CONTRACTS.PredictionMarket, marketId, userAddress]);
+      refetchClaimed();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  if (alreadyClaimed) return <p className="text-xs text-success">Reputation claimed.</p>;
+  return (
+    <div>
+      <Button size="sm" onClick={claim} disabled={loading}>{loading ? "Claiming…" : "Claim reputation update"}</Button>
+      {err && <p className="text-xs text-danger mt-2">{err}</p>}
+    </div>
   );
 }

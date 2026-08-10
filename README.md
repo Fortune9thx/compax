@@ -51,7 +51,7 @@ Every capital-moving decision uses `gl.eq_principle.prompt_non_comparative` (LLM
 | **PredictionMarket** | Binary markets; anyone proposes an outcome after staking closes, anyone can challenge, the creator cannot self-resolve | `resolve()` independently re-derives the real answer from the question + live data — it can and does disagree with the proposal |
 | **VaultManager** | Mandate vaults: a stated objective + risk tolerance reasons which instrument types (escrow/prediction/credit) capital may enter | The initial mandate at creation, and any later `re_evaluate_mandate()` re-run by a keeper |
 | **CreditLine** | Borrower posts collateral + purpose; a separate lender funds the loan with their own capital (no platform-funded pool); contested defaults are adjudicated | Loan-to-value + interest rate at open; on a contested default, the exact collateral split between lender and borrower |
-| **ReputationRegistry** | Pull-based score tracking, only from adjudicated outcomes of the other four contracts | The magnitude of each score delta, weighed by the actual severity of the outcome — not a fixed constant |
+| **ReputationRegistry** *(redeployed 2026-08-10)* | Pull-based score tracking, only from adjudicated outcomes of the other four contracts | The magnitude of each score delta, weighed by the actual severity of the outcome — not a fixed constant |
 
 All 5 contracts are independent at deploy time — see [`contracts/deploy_order.md`](contracts/deploy_order.md) for why, and how reputation and vault capital-movement actually work as a result. Current addresses: [`src/lib/contracts.ts`](src/lib/contracts.ts).
 

@@ -15,7 +15,11 @@ export const NETWORK = {
 } as const;
 
 export const CONTRACTS = {
-  ReputationRegistry: "0xbfFbe7c3c6996E8cB7063feA4c28D88A72Db52aa" as `0x${string}`,
+  // Redeployed 2026-08-10 to fix a bug where record_from_credit only accepted
+  // status "repaid"/"defaulted", but CreditLine.resolve_default actually sets
+  // status "resolved" — meaning reputation could never be claimed on a
+  // contested-default credit line. See contracts/ReputationRegistry.py.
+  ReputationRegistry: "0x959F078FC466AB57204BBB8F0Cf04CE08C074EaD" as `0x${string}`,
   EscrowAdjudicator: "0x44d0efE9E1d8529f4295C8EBE7c6426F7e1493EC" as `0x${string}`,
   VaultManager: "0x0815b09F89C97807c50e9fB2aa2744E21C895122" as `0x${string}`,
   PredictionMarket: "0x040CAb1ae474C6d775367734D13c903992b1806B" as `0x${string}`,

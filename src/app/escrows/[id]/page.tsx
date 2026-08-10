@@ -12,9 +12,10 @@ import { StatusBadge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/States";
 import { DeliberationTheater } from "@/components/deliberation/DeliberationTheater";
 import { useDeliberation } from "@/hooks/useDeliberation";
-import { useEscrow, useEscrowChallenges, useContractWrite } from "@/hooks/useContract";
+import { useEscrow, useEscrowChallenges, useContractWrite, useIsClaimed, escrowClaimKey } from "@/hooks/useContract";
 import { useWallet } from "@/hooks/useWallet";
 import { CONTRACTS } from "@/lib/contracts";
+import { AppealStatus } from "@/components/deliberation/AppealStatus";
 
 export default function EscrowDetailPage() {
   const params = useParams();
@@ -118,6 +119,12 @@ export default function EscrowDetailPage() {
         </div>
       )}
 
+      {escrow.status === "resolved" && state.phase === "idle" && (
+        <div className="mb-6">
+          <AppealStatus />
+        </div>
+      )}
+
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="space-y-6">
           {escrow.status === "open" && isProvider && (
@@ -212,6 +219,7 @@ export default function EscrowDetailPage() {
               <ClaimReputationButton escrowId={escrowId} />
             </Card>
           )}
+
         </div>
 
         <Card className="p-0 overflow-hidden self-start">
@@ -251,20 +259,21 @@ export default function EscrowDetailPage() {
 
 function ClaimReputationButton({ escrowId }: { escrowId: string }) {
   const { execute, loading } = useContractWrite();
-  const [done, setDone] = useState(false);
+  const claimKey = escrowClaimKey(CONTRACTS.EscrowAdjudicator, escrowId);
+  const { data: alreadyClaimed, refetch: refetchClaimed } = useIsClaimed(claimKey);
   const [err, setErr] = useState<string | null>(null);
 
   const claim = async () => {
     setErr(null);
     try {
       await execute("ReputationRegistry", "record_from_escrow", [CONTRACTS.EscrowAdjudicator, escrowId]);
-      setDone(true);
+      refetchClaimed();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     }
   };
 
-  if (done) return <p className="text-xs text-success">Reputation updated.</p>;
+  if (alreadyClaimed) return <p className="text-xs text-success">Reputation claimed.</p>;
   return (
     <div>
       <Button size="sm" onClick={claim} disabled={loading}>{loading ? "Claiming…" : "Claim reputation update"}</Button>

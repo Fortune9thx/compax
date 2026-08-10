@@ -23,7 +23,7 @@ Every capital-moving decision in this app requires judgment over real-world web 
 
 | Contract | Address | Deploy tx |
 |---|---|---|
-| ReputationRegistry | `0xbfFbe7c3c6996E8cB7063feA4c28D88A72Db52aa` | `0x357cf036b825385a0987cb65841c8b5e71ccbaff327c6c1f64de29fbfab559de` |
+| ReputationRegistry *(redeployed 2026-08-10)* | `0x959F078FC466AB57204BBB8F0Cf04CE08C074EaD` | `0xa0697aaf2a994bb37dfc1479ad3aea6d2127b0a6d2889e7028a21292b7010122` |
 | EscrowAdjudicator *(hero)* | `0x44d0efE9E1d8529f4295C8EBE7c6426F7e1493EC` | `0x9d57fbe7ad05c7edeb0c76db8cc3a4673bcf9e4d22e77effd7859e018dc152bb` |
 | VaultManager | `0x0815b09F89C97807c50e9fB2aa2744E21C895122` | `0x49bec0d2f35d52389c2bb609063d0ea7d2b1213e95f8fbbde6046db76b4c5a63` |
 | PredictionMarket | `0x040CAb1ae474C6d775367734D13c903992b1806B` | `0xdaa0e3bbb3ed2c6afb9343c6ece63d0aff5dedc8f36332d36848e19d5e273dd6` |
@@ -49,6 +49,7 @@ Every contract was exercised through a full real lifecycle on Bradbury before sh
 - **Value transfers**: every payout uses the documented `@gl.evm.contract_interface` `_Recipient` stub + `emit_transfer()` pattern from [Value Transfers](https://docs.genlayer.com/developers/intelligent-contracts/advanced-features/value-transfers). Every payout is bounds-checked against value the contract already holds — nothing can be sent that wasn't actually deposited/staked/collateralized by someone.
 - **Security**: prompt-injection defenses on all user-supplied text feeding into LLM prompts; owner-gated admin actions; every unbounded `get_all_*` view method takes `offset`/`limit` pagination; `CreditLine` is always over-collateralized; `EscrowAdjudicator`/`PredictionMarket` resolution is permissionless and independent of the party who benefits from a favorable outcome.
 - **No onchain wall-clock**: deadline gating for the autonomous keeper happens off-chain (`keeper/cycle.mjs`, where `Date.now()` is trivially available) rather than inside the contracts, which have no verified way to check "has this deadline passed."
+- **Vault capital movement is two-step, not atomic**: `VaultManager.move_to_*` releases mandate-approved capital to the vault owner's own wallet (a plain, working value transfer), not directly into a newly created instrument, because of the cross-contract-write limitation above. The owner then funds the real escrow/market/credit line themselves in a separate transaction — the UI states this explicitly rather than implying one-click atomicity.
 
 ## Test guide for reviewers/community
 
