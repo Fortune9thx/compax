@@ -1,23 +1,25 @@
-// VaultManager, StakingReserve, PredictionMarkets redeployed 2026-07-30 with
-// real settlement: withdraw/unstake/claim_winnings now actually pay out via
-// the verified _Recipient(Address).emit_transfer() pattern (docs.genlayer.com
-// /developers/intelligent-contracts/advanced-features/value-transfers).
-// LendingMarket + BuilderFunding redeployed the same day with an
-// owner-fundable cGEN pool (fund_pool, get_pool_balance): approved loans
-// and grants now actually disburse, capped by pool solvency. Both pools
-// seeded with 100,000 cGEN from the owner/deployer account.
-// Keeper (deployer) re-registered on the new VaultManager.
-// Correct header: # { "Depends": "py-genlayer:..." } — no version prefix
-// All txs: ACCEPTED + AGREE + FINISHED_WITH_RETURN (verified via getTransaction)
+// COMPAX v2 — deployed to GenLayer Bradbury testnet, 2026-07-31.
+// All 5 contracts independently deployed (no constructor args), verified
+// end-to-end with real transactions before shipping — see SUBMISSION.md.
+//
+// chainId 4221 · rpc-bradbury.genlayer.com
+// To point at mainnet later: swap NETWORK below and redeploy; no other
+// code changes required since every contract call goes through
+// src/lib/genlayer.ts, which reads NETWORK from here.
+export const NETWORK = {
+  name: "Bradbury Testnet",
+  chainId: 4221,
+  chainIdHex: "0x107D",
+  rpcUrl: "https://rpc-bradbury.genlayer.com",
+  explorerUrl: "https://explorer-bradbury.genlayer.com/",
+} as const;
+
 export const CONTRACTS = {
-  EconomicEvents:    "0x029619b9099f542bB858CEbB41D3bC1cf2e87281" as `0x${string}`,
-  ReputationSystem:  "0x972989090981eaB85a01FE99FfB8D214c1870F33" as `0x${string}`,
-  LendingMarket:     "0x5baDe34F61FEC6B9Cf4E6eb51411D0e91aB7Fd2f" as `0x${string}`,
-  BuilderFunding:    "0x4724f2743bC4d6d87D0611Fb5a75064a4762790A" as `0x${string}`,
-  PredictionMarkets: "0xC05D520Af05358f924B124D8cf0f13bd757CbAF1" as `0x${string}`,
-  VaultManager:      "0xD51CC631F9Bc3cA3507388bBBCcC6BD063e84e75" as `0x${string}`,
-  // 7th contract — backs the allocation_staking sleeve.
-  StakingReserve:    "0x9bD81Dd88C373c13Bc028497f45A371FF75765BB" as `0x${string}`,
+  ReputationRegistry: "0xbfFbe7c3c6996E8cB7063feA4c28D88A72Db52aa" as `0x${string}`,
+  EscrowAdjudicator: "0x44d0efE9E1d8529f4295C8EBE7c6426F7e1493EC" as `0x${string}`,
+  VaultManager: "0x0815b09F89C97807c50e9fB2aa2744E21C895122" as `0x${string}`,
+  PredictionMarket: "0x040CAb1ae474C6d775367734D13c903992b1806B" as `0x${string}`,
+  CreditLine: "0xC04F7900840a8088909b906bD429A4a834715Ca5" as `0x${string}`,
 } as const;
 
 export type ContractName = keyof typeof CONTRACTS;

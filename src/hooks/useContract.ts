@@ -5,9 +5,10 @@ import { readContract, writeContract } from "@/lib/genlayer";
 import { CONTRACTS } from "@/lib/contracts";
 import { _state } from "@/hooks/useWallet";
 
-const POLL_INTERVAL = 15_000; // 15 seconds — polite for Bradbury rate limits
+const POLL_INTERVAL = 15_000;
 
-// Generic hook for sequential contract reads with real-time polling
+// ─── generic read/write plumbing ────────────────────────────────────────
+
 export function useContractRead<T>(
   contract: keyof typeof CONTRACTS,
   method: string,
@@ -50,18 +51,12 @@ export function useContractRead<T>(
   return { data, loading, error, refetch: fetch, lastUpdated };
 }
 
-// Write hook — signs via connected MetaMask wallet (client-side, no private key)
 export function useContractWrite() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const execute = useCallback(
-    async (
-      contract: keyof typeof CONTRACTS,
-      method: string,
-      args: unknown[] = [],
-      value?: bigint
-    ) => {
+    async (contract: keyof typeof CONTRACTS, method: string, args: unknown[] = [], value?: bigint) => {
       const { address, connected, provider } = _state;
       if (!connected || !address) {
         throw new Error("Wallet not connected. Connect a wallet first.");
@@ -85,248 +80,192 @@ export function useContractWrite() {
   return { execute, loading, error };
 }
 
-// ─── Typed read hooks per contract ───
+// ─── types ──────────────────────────────────────────────────────────────
 
-export function useAllVaults() {
-  return useContractRead<VaultData[]>("VaultManager", "get_all_vaults", [], []);
-}
-export function useVault(id: string) {
-  return useContractRead<VaultData | null>("VaultManager", "get_vault", [id], null);
-}
-export function useTotalTVL() {
-  return useContractRead<number>("VaultManager", "get_total_tvl", [], 0);
-}
-export function useVaultCount() {
-  return useContractRead<number>("VaultManager", "get_active_vault_count", [], 0);
-}
-/** Total autonomous allocation cycles the manager has run. */
-export function useCycleCount() {
-  return useContractRead<number>("VaultManager", "get_cycle_count", [], 0);
-}
-export function useRebalanceHistory(vaultId: string) {
-  return useContractRead<RebalanceRecord[]>("VaultManager", "get_rebalance_history", [vaultId], []);
-}
-
-export function useAllEvents() {
-  return useContractRead<EventData[]>("EconomicEvents", "get_all_events", [], []);
-}
-export function useActiveEvent() {
-  return useContractRead<EventData | null>("EconomicEvents", "get_active_event", [], null);
-}
-export function useEventCount() {
-  return useContractRead<number>("EconomicEvents", "get_event_count", [], 0);
-}
-
-export function useCanClaimFaucet(address: string) {
-  return useContractRead<boolean>("ReputationSystem", "can_claim_faucet", [address], false);
-}
-export function useReputation(address: string) {
-  return useContractRead<ScoreData>("ReputationSystem", "get_score", [address], DEFAULT_SCORE);
-}
-export function useRepHistory(address: string) {
-  return useContractRead<RepEvent[]>("ReputationSystem", "get_history", [address], []);
-}
-
-export function useAllLoans() {
-  return useContractRead<LoanData[]>("LendingMarket", "get_all_active_loans", [], []);
-}
-export function useTotalBorrowed() {
-  return useContractRead<number>("LendingMarket", "get_total_borrowed", [], 0);
-}
-export function useLoanCount() {
-  return useContractRead<number>("LendingMarket", "get_loan_count", [], 0);
-}
-export function useLendingPoolBalance() {
-  return useContractRead<number>("LendingMarket", "get_pool_balance", [], 0);
-}
-
-export function useAllProjects() {
-  return useContractRead<ProjectData[]>("BuilderFunding", "get_all_projects", [], []);
-}
-export function useTotalAllocated() {
-  return useContractRead<number>("BuilderFunding", "get_total_allocated", [], 0);
-}
-export function useBuilderPoolBalance() {
-  return useContractRead<number>("BuilderFunding", "get_pool_balance", [], 0);
-}
-
-export function useAllMarkets() {
-  return useContractRead<MarketData[]>("PredictionMarkets", "get_all_markets", [], []);
-}
-export function useActiveMarkets() {
-  return useContractRead<MarketData[]>("PredictionMarkets", "get_active_markets", [], []);
-}
-export function useTotalVolume() {
-  return useContractRead<number>("PredictionMarkets", "get_total_volume", [], 0);
-}
-export function useMarketStake(marketId: string, address: string) {
-  return useContractRead<{ position?: string; amount?: number; claimed?: boolean }>(
-    "PredictionMarkets",
-    "get_user_stake",
-    [marketId, address],
-    {},
-  );
-}
-
-export function useAllStakes() {
-  return useContractRead<StakePosition[]>("StakingReserve", "get_all_positions", [], []);
-}
-export function useUserStakes(address: string) {
-  return useContractRead<StakePosition[]>("StakingReserve", "get_user_positions", [address], []);
-}
-export function useTotalStaked() {
-  return useContractRead<number>("StakingReserve", "get_total_staked", [], 0);
-}
-export function useStakingApr() {
-  return useContractRead<number>("StakingReserve", "get_current_apr", [], 0);
-}
-export function usePoolStats() {
-  return useContractRead<PoolStats>("StakingReserve", "get_pool_stats", [], DEFAULT_POOL_STATS);
-}
-
-// ─── Types ───
-
-export interface VaultData {
-  id: string;
-  name: string;
-  owner: string;
-  strategy: string;
-  objective: string;
-  risk_tolerance: number;
-  treasury: number;
-  allocation_lending: number;
-  allocation_staking: number;
-  allocation_predictions: number;
-  allocation_builders: number;
-  last_rebalance: string;
-  last_rebalance_reason: string;
-  total_yield: number;
-  personality: string;
-  created_at: string;
-  deposit_count: number;
-}
-
-export interface RebalanceRecord {
-  vault_id: string;
-  old_lending: number;
-  old_staking: number;
-  old_predictions: number;
-  old_builders: number;
-  new_lending: number;
-  new_staking: number;
-  new_predictions: number;
-  new_builders: number;
-  reason: string;
-  event_context: string;
-  /** Raw CoinGecko payload the contract reasoned over. Proof, not decoration. */
-  market_snapshot: string;
-  /** Raw Fear & Greed payload the contract reasoned over. */
-  sentiment_snapshot: string;
-  /** "keeper" = autonomous cycle, "owner" = manually triggered. */
-  triggered_by: string;
-  timestamp: string;
-}
-
-export interface EventData {
-  id: string;
-  event_type: string;
-  name: string;
-  description: string;
-  impact: string;
-  severity: number;
-  triggered_at: string;
-  triggered_by: string;
-  is_active: boolean;
-}
-
-export interface ScoreData {
+export interface ReputationScore {
   address: string;
   total_score: number;
-  loan_score: number;
-  funding_score: number;
+  escrow_score: number;
   prediction_score: number;
-  vault_score: number;
+  credit_score: number;
   total_actions: number;
 }
-
-const DEFAULT_SCORE: ScoreData = {
-  address: "", total_score: 500, loan_score: 0,
-  funding_score: 0, prediction_score: 0, vault_score: 0, total_actions: 0,
+const DEFAULT_SCORE: ReputationScore = {
+  address: "", total_score: 500, escrow_score: 0, prediction_score: 0, credit_score: 0, total_actions: 0,
 };
-
-export interface RepEvent {
-  action: string;
+export interface ReputationEvent {
+  category: "escrow" | "prediction" | "credit";
   delta: number;
   reason: string;
   timestamp: string;
 }
 
-export interface StakePosition {
+export interface EvidenceEntry {
+  submitter: string;
+  text: string;
+  urls: string[];
+}
+export interface Escrow {
   id: string;
-  staker: string;
+  funder: string;
+  provider: string;
   amount: number;
-  apr_bps: number;
-  tier: string;
-  status: string;
+  criteria: string;
+  deadline: string;
+  required_evidence_types: string;
+  status: "open" | "accepted" | "evidence_submitted" | "challenged" | "resolved";
+  evidence: EvidenceEntry[];
+  outcome: "" | "full_release" | "partial" | "clawback";
+  released_amount: number;
   ai_reasoning: string;
-  staked_at: string;
-  unstaked_at: string;
+  evidence_snapshot: string;
+  web_data_snapshot: string;
+  provider_bond: number;
+  created_at: string;
+  resolved_at: string;
+}
+export interface EscrowChallenge {
+  challenger: string;
+  reason: string;
+  bond: number;
+  refunded: boolean;
 }
 
-export interface PoolStats {
-  total_staked: number;
-  current_apr_bps: number;
-  active_positions: number;
-  unique_stakers: number;
-  total_positions: number;
-}
-
-const DEFAULT_POOL_STATS: PoolStats = {
-  total_staked: 0, current_apr_bps: 0, active_positions: 0,
-  unique_stakers: 0, total_positions: 0,
-};
-
-export interface LoanData {
+export interface Vault {
   id: string;
-  borrower: string;
-  amount: number;
-  interest_rate_bps: number;
-  duration_days: number;
-  purpose: string;
-  description: string;
-  status: string;
-  ai_reasoning: string;
-  risk_score: number;
-  requested_at: string;
-  due_at: string;
-}
-
-export interface ProjectData {
-  id: string;
-  applicant: string;
+  owner: string;
   name: string;
-  description: string;
-  funding_requested: number;
-  funding_allocated: number;
-  expected_outcome: string;
-  timeline_weeks: number;
+  objective: string;
+  risk_tolerance: number;
+  personality: string;
+  treasury: number;
+  allowed_instruments: ("escrow" | "prediction" | "credit")[];
+  mandate_reasoning: string;
+  deposit_count: number;
   status: string;
-  ai_reasoning: string;
-  conditions: string;
-  submitted_at: string;
-  decided_at: string;
+  created_at: string;
 }
 
-export interface MarketData {
+export interface Market {
   id: string;
   creator: string;
   question: string;
-  resolution_date: string;
+  resolution_sources: string;
+  deadline: string;
   total_yes: number;
   total_no: number;
-  status: string;
-  outcome: string;
+  status: "active" | "proposed" | "challenged" | "resolved";
+  proposed_outcome: "" | "yes" | "no";
+  proposed_by: string;
+  proposed_evidence: string;
+  outcome: "" | "yes" | "no";
+  resolution_reasoning: string;
+  web_data_snapshot: string;
   created_at: string;
   resolved_at: string;
-  resolution_reasoning: string;
+}
+export interface MarketStake {
+  position?: "yes" | "no";
+  amount?: number;
+  claimed?: boolean;
+}
+export interface MarketChallenge {
+  challenger: string;
+  reason: string;
+  bond: number;
+}
+
+export interface CreditLineData {
+  id: string;
+  borrower: string;
+  collateral_amount: number;
+  purpose: string;
+  max_loan_amount: number;
+  interest_rate_bps: number;
+  ai_terms_reasoning: string;
+  status: "open" | "funded" | "repaid" | "default_claimed" | "disputed" | "resolved";
+  lender: string;
+  loan_amount: number;
+  default_evidence: string;
+  borrower_rebuttal: string;
+  collateral_to_lender: number;
+  collateral_to_borrower: number;
+  ai_reasoning: string;
+  created_at: string;
+  resolved_at: string;
+}
+
+// ─── ReputationRegistry ──────────────────────────────────────────────────
+
+export function useReputationScore(address: string) {
+  return useContractRead<ReputationScore>("ReputationRegistry", "get_score", [address], DEFAULT_SCORE);
+}
+export function useReputationHistory(address: string, offset = 0, limit = 100) {
+  return useContractRead<ReputationEvent[]>("ReputationRegistry", "get_history", [address, offset, limit], []);
+}
+export function useIsTrustedSource(address: string, category: string) {
+  return useContractRead<boolean>("ReputationRegistry", "is_trusted_source", [address, category], false);
+}
+
+// ─── EscrowAdjudicator ───────────────────────────────────────────────────
+
+export function useEscrow(escrowId: string) {
+  return useContractRead<Escrow | Record<string, never>>("EscrowAdjudicator", "get_escrow", [escrowId], {});
+}
+export function useAllEscrows(offset = 0, limit = 100) {
+  return useContractRead<Escrow[]>("EscrowAdjudicator", "get_all_escrows", [offset, limit], []);
+}
+export function useEscrowChallenges(escrowId: string, offset = 0, limit = 100) {
+  return useContractRead<EscrowChallenge[]>("EscrowAdjudicator", "get_challenges", [escrowId, offset, limit], []);
+}
+export function useEscrowCount() {
+  return useContractRead<number>("EscrowAdjudicator", "get_escrow_count", [], 0);
+}
+
+// ─── VaultManager ────────────────────────────────────────────────────────
+
+export function useVault(vaultId: string) {
+  return useContractRead<Vault | Record<string, never>>("VaultManager", "get_vault", [vaultId], {});
+}
+export function useAllVaults(offset = 0, limit = 100) {
+  return useContractRead<Vault[]>("VaultManager", "get_all_vaults", [offset, limit], []);
+}
+export function useVaultCount() {
+  return useContractRead<number>("VaultManager", "get_vault_count", [], 0);
+}
+
+// ─── PredictionMarket ────────────────────────────────────────────────────
+
+export function useMarket(marketId: string) {
+  return useContractRead<Market | Record<string, never>>("PredictionMarket", "get_market", [marketId], {});
+}
+export function useAllMarkets(offset = 0, limit = 100) {
+  return useContractRead<Market[]>("PredictionMarket", "get_all_markets", [offset, limit], []);
+}
+export function useActiveMarkets(offset = 0, limit = 100) {
+  return useContractRead<Market[]>("PredictionMarket", "get_active_markets", [offset, limit], []);
+}
+export function useMarketUserStake(marketId: string, address: string) {
+  return useContractRead<MarketStake>("PredictionMarket", "get_user_stake", [marketId, address], {});
+}
+export function useMarketChallenges(marketId: string, offset = 0, limit = 100) {
+  return useContractRead<MarketChallenge[]>("PredictionMarket", "get_challenges", [marketId, offset, limit], []);
+}
+export function useTotalVolume() {
+  return useContractRead<number>("PredictionMarket", "get_total_volume", [], 0);
+}
+export function useMarketCount() {
+  return useContractRead<number>("PredictionMarket", "get_market_count", [], 0);
+}
+
+// ─── CreditLine ──────────────────────────────────────────────────────────
+
+export function useCreditLine(lineId: string) {
+  return useContractRead<CreditLineData | Record<string, never>>("CreditLine", "get_line", [lineId], {});
+}
+export function useAllCreditLines(offset = 0, limit = 100) {
+  return useContractRead<CreditLineData[]>("CreditLine", "get_all_lines", [offset, limit], []);
+}
+export function useCreditLineCount() {
+  return useContractRead<number>("CreditLine", "get_line_count", [], 0);
 }

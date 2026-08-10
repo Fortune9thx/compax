@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect } from "react";
-import { AppShell } from "@/components/compax/AppShell";
+import { AppShell } from "@/components/layout/AppShell";
+import { Button } from "@/components/ui/Button";
 
 export default function Error({
   error,
@@ -16,12 +17,10 @@ export default function Error({
 
   return (
     <AppShell degraded>
-      <div style={{ display: "flex", flexDirection: "column", gap: 18, alignItems: "flex-start", paddingTop: 40 }}>
-        <span className="ce-mono" style={{ fontSize: 11, color: "var(--clay)" }}>ERROR</span>
-        <span style={{ fontSize: 16, color: "var(--muted)" }}>Something went wrong reading chain state.</span>
-        <div style={{ display: "flex", gap: 10 }}>
-          <button className="ce-btn" onClick={reset}>Try again</button>
-        </div>
+      <div className="flex flex-col items-start gap-4 pt-16">
+        <span className="compax-mono text-xs text-danger">ERROR</span>
+        <p className="text-text-secondary">Something went wrong reading chain state.</p>
+        <Button size="sm" onClick={reset}>Try again</Button>
       </div>
     </AppShell>
   );

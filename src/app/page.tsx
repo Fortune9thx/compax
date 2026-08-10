@@ -1,183 +1,125 @@
+"use client";
+
 import Link from "next/link";
-import { Terminal } from "@/components/compax/Terminal";
-import { Reveal, RevealGroup, RevealItem } from "@/components/compax/Reveal";
-import { ConsensusGlyph } from "@/components/compax/Engine";
-import { EngineMark } from "@/components/compax/AppShell";
+import { ShieldCheck, TrendingUp, Landmark, Vault, ArrowUpRight } from "lucide-react";
+import { AppShell } from "@/components/layout/AppShell";
+import { Card, CardLabel } from "@/components/ui/Card";
+import { StatusBadge } from "@/components/ui/Badge";
+import { EmptyState, SkeletonGrid } from "@/components/ui/States";
+import {
+  useEscrowCount,
+  useMarketCount,
+  useCreditLineCount,
+  useVaultCount,
+  useAllEscrows,
+  useAllMarkets,
+  useAllCreditLines,
+  useTotalVolume,
+} from "@/hooks/useContract";
 
-/* ─── Landing ────────────────────────────────────────────────────────────
-   Architecture follows the reference: a centred editorial headline, pill
-   CTAs with radial edge-glow, then the product itself as one large elevated
-   surface. Sections rise on scroll under a single motion grammar.
-──────────────────────────────────────────────────────────────────────── */
-
-const STEPS = [
-  {
-    n: "01",
-    t: "State an objective",
-    d: "Write the mandate in a sentence — target, risk ceiling, horizon, constraints. No allocation tables.",
-  },
-  {
-    n: "02",
-    t: "Validators deliberate",
-    d: "An intelligent contract reasons over live market context. Five validators independently vote on the result.",
-  },
-  {
-    n: "03",
-    t: "Capital moves, onchain",
-    d: "The allocation is written with its full reasoning. Dissent is preserved. The loop repeats on every event.",
-  },
-];
-
-const SECTORS = [
-  { t: "Lending", d: "Credit priced against reputation and reasoned terms." },
-  { t: "Staking", d: "The reserve — yield bands set from live conditions." },
-  { t: "Builders", d: "Milestone-gated funding for ecosystem work." },
-  { t: "Predictions", d: "Questions an intelligent contract can resolve." },
-];
-
-export default function LandingPage() {
+function StatTile({ icon: Icon, label, value, href }: { icon: React.ComponentType<{ size?: number; className?: string }>; label: string; value: string | number; href: string }) {
   return (
-    <main className="cx-page">
-      <nav className="cx-nav">
-        <Link href="/" className="cx-brand">
-          <EngineMark size={20} />
-          <span>Compax</span>
-        </Link>
-        <div className="cx-nav-links">
-          <a href="#how">How it works</a>
-          <a href="#council">Council</a>
-          <a href="#sectors">Sectors</a>
+    <Link href={href}>
+      <Card className="hover:border-text-muted transition-colors group">
+        <div className="flex items-start justify-between">
+          <Icon size={17} className="text-accent" />
+          <ArrowUpRight size={14} className="text-text-muted opacity-0 group-hover:opacity-100 transition-opacity" />
         </div>
-        <Link href="/ecosystem" className="cx-pill cx-pill-main cx-pill-sm">
-          Open terminal
-        </Link>
-      </nav>
+        <p className="compax-mono text-2xl font-medium text-text-primary mt-4">{value}</p>
+        <p className="text-xs text-text-muted mt-1">{label}</p>
+      </Card>
+    </Link>
+  );
+}
 
-      {/* ── hero ── */}
-      <section className="cx-hero">
-        <Reveal y={16}>
-          <span className="cx-eyebrow-pill">
-            <i className="cx-dot" />
-            7 intelligent contracts live on GenLayer Bradbury
-          </span>
-        </Reveal>
+export default function DashboardPage() {
+  const { data: escrowCount } = useEscrowCount();
+  const { data: marketCount } = useMarketCount();
+  const { data: lineCount } = useCreditLineCount();
+  const { data: vaultCount } = useVaultCount();
+  const { data: volume } = useTotalVolume();
+  const { data: escrows, loading: escrowsLoading } = useAllEscrows(0, 5);
+  const { data: markets } = useAllMarkets(0, 5);
+  const { data: lines } = useAllCreditLines(0, 5);
 
-        <Reveal delay={0.08}>
-          <h1 className="cx-display">
-            Capital that reasons
-            <br />
-            before it moves
-          </h1>
-        </Reveal>
+  const recentEscrows = [...escrows].reverse().slice(0, 4);
+  const recentMarkets = [...markets].reverse().slice(0, 4);
+  const recentLines = [...lines].reverse().slice(0, 4);
+  const hasActivity = recentEscrows.length > 0 || recentMarkets.length > 0 || recentLines.length > 0;
 
-        <Reveal delay={0.16}>
-          <p className="cx-sub">
-            Compax is an autonomous treasury. State an objective and intelligent
-            contracts allocate across lending, staking, builders and predictions —
-            every decision evaluated by five validators and written onchain.
-          </p>
-        </Reveal>
+  return (
+    <AppShell>
+      <header className="mb-8">
+        <h1 className="compax-serif text-3xl text-text-primary">Capital under adjudication</h1>
+        <p className="text-sm text-text-muted mt-1.5">
+          Every number below is live onchain state from GenLayer Bradbury — nothing here is placeholder data.
+        </p>
+      </header>
 
-        <Reveal delay={0.24} className="cx-cta">
-          <Link href="#how" className="cx-pill">
-            See how it works
-          </Link>
-          <Link href="/vaults/create" className="cx-pill cx-pill-main">
-            State an objective
-          </Link>
-        </Reveal>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
+        <StatTile icon={ShieldCheck} label={`Escrow${escrowCount === 1 ? "" : "s"} adjudicated`} value={escrowCount} href="/escrows" />
+        <StatTile icon={TrendingUp} label="Prediction volume" value={volume.toLocaleString()} href="/markets" />
+        <StatTile icon={Landmark} label={`Credit line${lineCount === 1 ? "" : "s"}`} value={lineCount} href="/credit" />
+        <StatTile icon={Vault} label={`Mandate vault${vaultCount === 1 ? "" : "s"}`} value={vaultCount} href="/vaults" />
+      </div>
 
-        <Reveal delay={0.3} y={40} className="cx-term-mount">
-          <Terminal />
-        </Reveal>
-      </section>
-
-      {/* ── how it works ── */}
-      <section id="how" className="cx-section">
-        <Reveal>
-          <p className="cx-kicker">How it works</p>
-          <h2 className="cx-h2">From a sentence to a signed decision</h2>
-        </Reveal>
-        <RevealGroup className="cx-steps">
-          {STEPS.map((s) => (
-            <RevealItem key={s.n} className="cx-step">
-              <span className="cx-step-n">{s.n}</span>
-              <h3 className="cx-step-t">{s.t}</h3>
-              <p className="cx-step-d">{s.d}</p>
-            </RevealItem>
-          ))}
-        </RevealGroup>
-      </section>
-
-      {/* ── council ── */}
-      <section id="council" className="cx-section cx-section-alt">
-        <div className="cx-split">
-          <Reveal>
-            <p className="cx-kicker">The council</p>
-            <h2 className="cx-h2">Five validators. One decision. Dissent kept.</h2>
-            <p className="cx-body">
-              Every Compax transaction is evaluated independently by five GenLayer
-              validators. Consensus is earned before any state is written, and the
-              reasoning behind that consensus is permanent onchain.
-            </p>
-          </Reveal>
-          <Reveal delay={0.12}>
-            <div className="cx-card cx-vote-card">
-              <span className="cx-label">How deliberation resolves</span>
-              {[
-                { v: [true, true, true, true, true], l: "Accepted", n: "consensus" },
-                { v: [null, null, null, null, null], l: "Deliberating", n: "in flight" },
-              ].map((r) => (
-                <div key={r.l} className="cx-vote-row">
-                  <ConsensusGlyph votes={r.v as [boolean | null, boolean | null, boolean | null, boolean | null, boolean | null]} size={8} gap={5} />
-                  <span className="cx-vote-l">{r.l}</span>
-                  <span className="cx-vote-n">{r.n}</span>
+      {escrowsLoading && !hasActivity ? (
+        <SkeletonGrid count={3} />
+      ) : !hasActivity ? (
+        <EmptyState
+          title="No activity yet"
+          description="Create a vault, open an escrow, or launch a prediction market to see it here."
+        />
+      ) : (
+        <div className="grid gap-6 lg:grid-cols-3">
+          <ActivityColumn title="Escrows" href="/escrows">
+            {recentEscrows.map((e) => (
+              <Link key={e.id} href={`/escrows/${e.id}`} className="block py-2.5 border-b border-border/60 last:border-0">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs text-text-secondary truncate">{e.criteria}</span>
+                  <StatusBadge status={e.status} className="flex-none" />
                 </div>
-              ))}
-            </div>
-          </Reveal>
+              </Link>
+            ))}
+          </ActivityColumn>
+          <ActivityColumn title="Markets" href="/markets">
+            {recentMarkets.map((m) => (
+              <Link key={m.id} href={`/markets/${m.id}`} className="block py-2.5 border-b border-border/60 last:border-0">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs text-text-secondary truncate">{m.question}</span>
+                  <StatusBadge status={m.status} className="flex-none" />
+                </div>
+              </Link>
+            ))}
+          </ActivityColumn>
+          <ActivityColumn title="Credit lines" href="/credit">
+            {recentLines.map((l) => (
+              <div key={l.id} className="py-2.5 border-b border-border/60 last:border-0">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs text-text-secondary truncate">{l.purpose}</span>
+                  <StatusBadge status={l.status} className="flex-none" />
+                </div>
+              </div>
+            ))}
+          </ActivityColumn>
         </div>
-      </section>
+      )}
+    </AppShell>
+  );
+}
 
-      {/* ── sectors ── */}
-      <section id="sectors" className="cx-section">
-        <Reveal>
-          <p className="cx-kicker">Four sectors</p>
-          <h2 className="cx-h2">One treasury, continuously redirected</h2>
-        </Reveal>
-        <RevealGroup className="cx-sectors">
-          {SECTORS.map((s) => (
-            <RevealItem key={s.t} className="cx-card">
-              <h3 className="cx-step-t">{s.t}</h3>
-              <p className="cx-step-d">{s.d}</p>
-            </RevealItem>
-          ))}
-        </RevealGroup>
-      </section>
-
-      {/* ── cta ── */}
-      <section className="cx-close">
-        <Reveal>
-          <h2 className="cx-display cx-display-sm">
-            The economy is already thinking
-          </h2>
-          <p className="cx-sub">Give it something to think about.</p>
-          <div className="cx-cta">
-            <Link href="/vaults/create" className="cx-pill cx-pill-main">
-              State an objective
-            </Link>
-          </div>
-        </Reveal>
-      </section>
-
-      <footer className="cx-foot">
-        <span>Compax — autonomous treasury infrastructure</span>
-        <div>
-          <Link href="/ecosystem">Ecosystem</Link>
-          <Link href="/vaults">Vaults</Link>
-          <Link href="/reputation">Reputation</Link>
-        </div>
-      </footer>
-    </main>
+function ActivityColumn({ title, href, children }: { title: string; href: string; children: React.ReactNode }) {
+  return (
+    <Card className="p-0 overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-3.5 border-b border-border">
+        <CardLabel>{title}</CardLabel>
+        <Link href={href} className="text-[11px] text-accent-hover hover:underline">
+          View all
+        </Link>
+      </div>
+      <div className="px-5">
+        {children || <p className="text-xs text-text-muted py-4">Nothing here yet.</p>}
+      </div>
+    </Card>
   );
 }

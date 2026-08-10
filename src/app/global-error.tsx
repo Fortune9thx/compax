@@ -23,21 +23,21 @@ export default function GlobalError({
           alignItems: "center",
           justifyContent: "center",
           gap: 16,
-          background: "#070F12",
-          color: "#E7ECEA",
+          background: "#0a0b0f",
+          color: "#f1f5f9",
           fontFamily: "system-ui, sans-serif",
         }}
       >
-        <span style={{ fontSize: 13, letterSpacing: "0.1em", color: "#E0654A" }}>APPLICATION ERROR</span>
-        <p style={{ fontSize: 15, color: "#9AA5A2" }}>Compax failed to load.</p>
+        <span style={{ fontSize: 13, letterSpacing: "0.1em", color: "#ef4444" }}>APPLICATION ERROR</span>
+        <p style={{ fontSize: 15, color: "#94a3b8" }}>Compax failed to load.</p>
         <button
           onClick={reset}
           style={{
             padding: "10px 20px",
             borderRadius: 999,
-            border: "1px solid #00C27A",
+            border: "1px solid #6366f1",
             background: "transparent",
-            color: "#5FE3A8",
+            color: "#818cf8",
             cursor: "pointer",
           }}
         >
