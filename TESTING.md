@@ -1,80 +1,80 @@
 # Testing Compax on Bradbury
 
-Copy-pasteable walkthrough for testing the live app. Takes about 10 minutes for the full loop.
+Copy-pasteable walkthrough for testing the live app. About 15 minutes for the full loop across all 5 contracts.
 
 Live app: **https://compax-sepia.vercel.app**
 
 ---
 
-## 1. Set up MetaMask for Bradbury
+## 1. Set up your wallet for Bradbury
 
-Open MetaMask → **Add network manually** → enter:
+Add a network manually in your EVM wallet (MetaMask, Rabby, Coinbase Wallet — any EIP-6963 wallet works, the app isn't MetaMask-only):
 
 ```
-Network name:      GenLayer Bradbury Testnet
-New RPC URL:        https://rpc-bradbury.genlayer.com
-Chain ID:            4221
-Currency symbol:     GEN
+Network name:   GenLayer Bradbury Testnet
+RPC URL:        https://rpc-bradbury.genlayer.com
+Chain ID:       4221
+Currency:       GEN
 ```
 
-If you already have a Bradbury-funded account, skip to step 2. If not, get testnet GEN from the [GenLayer Bradbury faucet](https://testnet-faucet.genlayer.foundation) (needed for gas and for deposits/loans/stakes — see the note in step 3 below).
+Get testnet GEN from the [Bradbury faucet](https://testnet-faucet.genlayer.foundation).
 
-## 2. Connect your wallet
+## 2. Connect
 
-Open **https://compax-sepia.vercel.app**, click **Connect wallet** in the top rail. If MetaMask is on the wrong network, the app will prompt a network switch to Bradbury automatically.
+Open the app, click **Connect Wallet** in the top-right. If you have more than one wallet extension installed, you'll get a picker; otherwise it connects directly. If you're on the wrong network, the wallet will prompt a switch.
 
-## 3. Activate your reputation record
+## 3. Create an escrow (the hero flow)
 
-Go to `/reputation` or `/faucet` → **Activate**. This is a one-time, per-address write (`ReputationSystem.claim_cgen`) that initializes your onchain reputation record — it does **not** transfer any cGEN to your wallet, despite the method's name. Confirm the transaction in MetaMask, wait for the deliberation indicator to resolve to **Accepted**. The actual testnet GEN you use for deposits/loans/stakes comes from the [Bradbury faucet](https://testnet-faucet.genlayer.foundation) in step 1.
+Go to **Escrows → New escrow**.
 
-## 4. Create a vault
+- **Provider**: any second address you control, or a friend's — must differ from your own.
+- **Success criteria**: something concrete and checkable, e.g. *"Deliver a working README with setup instructions, pushed to a public GitHub repo."*
+- **Deadline**: any date.
+- **Amount**: however much testnet GEN you want to lock.
 
-Go to `/vaults` → **Create vault**.
+Submit — capital locks immediately. Watch the **DeliberationTheater**: five dots pulse while validators deliberate, then resolve to a checkmark once consensus is reached.
 
-- **Name**: anything, e.g. `Test Vault 1`
-- **Strategy**: pick one of `conservative` / `growth` / `balanced` / `institutional`
-- **Objective**: a one-sentence mandate, e.g. `"Grow steadily with moderate risk over 12 months."`
-- **Risk tolerance**: 1–10
+**As the provider** (switch wallets, or have your counterpart do it): open the escrow, click **Accept**, then **Submit evidence** with real text and at least one real URL.
 
-Submit. This calls `VaultManager.create_vault`, which runs a real LLM reasoning pass (`gl.eq_principle.prompt_non_comparative`) to set the vault's *initial* allocation from your objective/strategy/risk — not a lookup table. Wait for consensus, then open the vault.
+**As anyone**: click **Resolve**. This takes 30–90 seconds — five validators are independently fetching the evidence URL live and reasoning over whether it satisfies the original criteria. Expand the DeliberationTheater afterward to see the exact reasoning, the evidence considered, and the live web data used.
 
-## 5. Deposit and rebalance
+If the outcome is anything but a full clawback, the provider receives real GEN — check your wallet balance.
 
-On the vault detail page:
+## 4. Try a contested prediction market
 
-- **Deposit** some cGEN into the vault.
-- Click **Rebalance**. This asks `VaultManager.rebalance_vault` to fetch live CoinGecko prices + the Fear & Greed index, reason over them, and reallocate. This can take 30–90 seconds — five validators are independently evaluating the same LLM call and reaching consensus.
-- Check the **History** tab afterward: each decision row is expandable and shows the reasoning, the raw market/sentiment data it actually read, and the full allocation shift.
+Go to **Markets → New market** — ask a precise yes/no question with a real deadline.
 
-## 6. Request a loan
+Stake on both YES and NO from two different wallets (or ask a friend to take the other side). Once you're done staking, **propose an outcome** with evidence — anyone can do this, not just the creator. Optionally **challenge** the proposal from a different wallet with a bond and a reason it's wrong.
 
-Go to `/lending` → submit a loan request (amount, duration, purpose, description). `LendingMarket.request_loan` reasons approval/rate/risk from live market data — you'll see the AI's reasoning attached to the loan record on the book.
+Click **Resolve**. The AI reasons the real answer fresh from the question and live data — it does not simply accept the proposal, and in our own testing it overruled the creator's own proposed outcome after weighing a challenge. If you were on the winning side, go back to the market page and click **Claim winnings**.
 
-## 7. Submit a builder funding proposal
+## 5. Open a credit line
 
-Go to `/builders` → submit a project (name, description, funding requested, expected outcome, timeline). `BuilderFunding.submit_project` reasons fund/reject/partial.
+Go to **Credit → Open a line** — state a purpose and post collateral. The AI sets a maximum loan (always less than your collateral) and an interest rate.
 
-## 8. Create and stake on a prediction market
+From a *different* wallet, click a line in the list, and **fund** it up to the max loan amount — that GEN goes straight to the borrower. As the borrower, you can either:
+- **Repay** (principal + interest) — collateral returns to you in full, lender gets paid.
+- Do nothing and let the lender **claim default** with evidence — you can then **dispute** with a rebuttal before anyone calls **resolve**, which splits the collateral based on how credible each side's case is.
 
-Go to `/predictions` → create a market (a yes/no question) or stake cGEN on an existing one.
+## 6. Create a mandate vault
 
-## 9. Stake in the reserve
+Go to **Vaults → New vault** — state an objective in your own words and a risk tolerance (1–10 slider). The AI decides which instrument types (escrow / prediction / credit) this vault's capital is allowed to enter — try a very conservative objective and a very aggressive one side by side to see the mandate actually differ.
 
-Go to `/staking` → stake cGEN. `StakingReserve` assigns your position a yield band and validator tier from live market context.
+Deposit some GEN, then try **Move capital** to an instrument type the mandate didn't approve — it will be rejected onchain, not just hidden in the UI.
 
-## 10. Check your reputation
+## 7. Check reputation
 
-Go to `/reputation` → your address should show updated sector scores after any of the above actions that route through `ReputationSystem` (loan repayment, funding repayment, prediction resolution, vault performance).
+Go to **Reputation**, paste in the provider/lender/staker address from any of the above. After a resolved outcome, click **Claim reputation update** on the relevant escrow/market/line page — reputation is never updated automatically, it has to be pulled by a party or a keeper after resolution.
 
 ---
 
 ## What to look for as a tester
 
-- **Every write should show a deliberation indicator** (`Validators deliberating` → `Consensus reached · AGREE`) before the UI updates — this is real: five GenLayer validators are independently evaluating the same LLM call.
-- **Every AI decision should have visible reasoning** attached to the resulting record (loan, project, rebalance, event) — not just a status flag.
-- **Nothing should be hardcoded or fake** — if a number reads 0, it's because the chain state is actually 0, not a placeholder. Empty states say so explicitly ("No vaults yet," etc.) instead of showing sample data.
-- If the app shows a degraded/syncing banner, that means a read failed (RPC hiccup) — retry, don't assume it's broken.
+- **Every write shows a real deliberation** — five pulsing dots, then a genuine consensus result, not a fake progress bar.
+- **Resolutions cite specifics** — expand the DeliberationTheater on any resolved item; the reasoning should reference the actual evidence/proposal/challenge you submitted, not generic boilerplate.
+- **Mandate gates are real** — an instrument type the vault's mandate doesn't allow will reject the transaction, not just grey out a button.
+- **Nothing is placeholder data** — if a number reads 0, the chain state is actually 0.
 
 ## Reporting issues
 
-Open an issue at https://github.com/Fortune9thx/compax/issues with: what you did, what you expected, what happened, and the tx hash if a write was involved (visible in the deliberation indicator once it resolves).
+Open an issue at https://github.com/Fortune9thx/compax/issues with what you did, what you expected, what happened, and the tx hash once the deliberation indicator resolves.

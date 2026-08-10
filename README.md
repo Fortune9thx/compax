@@ -1,21 +1,22 @@
-# Compax — The Operating System for Autonomous Capital
+# Compax — The Adjudication Layer for Autonomous Capital
 
-**An economy that thinks before it moves.**
+**Multi-party capital, adjudicated by consensus, under natural-language mandates.**
 
-Compax is an autonomous treasury operating system built on [GenLayer](https://genlayer.com) Bradbury testnet. Users state an objective; GenLayer intelligent contracts reason over live market data and continuously reallocate capital across lending, staking, builder funding, and prediction markets — writing every decision onchain with its reasoning attached.
+Compax is a GenLayer intelligent-contract platform on Bradbury testnet. Capital is locked against natural-language success criteria; five GenLayer validators independently fetch live web evidence and evaluate submitted proof, reaching consensus to release, partially release, claw back, or split that capital — with the full reasoning and the data that informed it written onchain, and GenLayer's native appeal window available before anything finalizes.
 
-This is not a demo. It is a functioning Bradbury testnet application. The intelligent contract is the portfolio manager.
+This is not a demo, and it is not a portfolio-rebalancing app. Every capital-moving decision here requires judgment over contested, real-world evidence.
 
-**Live app**: https://compax-sepia.vercel.app · **Testing guide**: [TESTING.md](TESTING.md) · **Portal submission details**: [SUBMISSION.md](SUBMISSION.md)
+**Live app**: https://compax-sepia.vercel.app · **Testing guide**: [TESTING.md](TESTING.md) · **Portal submission**: [SUBMISSION.md](SUBMISSION.md)
 
 ---
 
 ## The Thesis
 
-1. **State an objective** — a mandate, not a position. *"Grow this treasury toward steady income with moderate risk."*
-2. **Five validators deliberate** — each intelligent contract call is independently evaluated by five GenLayer validators (`gl.eq_principle.prompt_non_comparative`) before consensus is reached and state is written.
-3. **Capital moves, onchain** — every rebalance, loan decision, funding evaluation, and reputation update is recorded with the reasoning and the live market data (CoinGecko prices, Fear & Greed index) that informed it.
-4. **The vault manager can act on its own** — a registered keeper (`keeper/cycle.mjs`) can trigger a vault's reallocation without a human present. The keeper decides nothing and cannot move funds; it only asks the contract to reason.
+1. **Lock capital under a natural-language mandate** — a performance escrow's success criteria, a prediction market's question, a credit line's collateral and purpose.
+2. **Evidence is submitted, and it can be challenged** — a provider submits proof; anyone can post a bond and contest it before it resolves.
+3. **Five validators adjudicate, not rubber-stamp** — `resolve()` fetches live web data itself and reasons fresh from the original mandate, weighing evidence and any challenge. In testing, this genuinely produced outcomes that disagreed with what was proposed — see [SUBMISSION.md](SUBMISSION.md) for the actual transcripts.
+4. **Reputation only updates from adjudicated outcomes** — never self-reported, and pulled from the resolved instrument's own onchain state, not pushed blindly.
+5. **The keeper triggers, never decides** — an optional autonomous process asks overdue escrows/markets to resolve themselves. It cannot move funds and cannot influence the outcome.
 
 ---
 
@@ -24,11 +25,8 @@ This is not a demo. It is a functioning Bradbury testnet application. The intell
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                     COMPAX FRONTEND                          │
-│         Next.js 16 (Turbopack) · React 19 · App Router       │
-│    Archivo / JetBrains Mono / Instrument Serif · dark theme  │
-├─────────────────────────────────────────────────────────────┤
-│                      HOOKS LAYER                              │
-│      useContract.ts — typed reads/writes per contract         │
+│    Next.js 16 (Turbopack) · React 19 · Tailwind CSS v4      │
+│         Archivo / JetBrains Mono / Instrument Serif          │
 ├─────────────────────────────────────────────────────────────┤
 │                 CLIENT-SIDE SIGNING                            │
 │  src/lib/genlayer.ts — genlayer-js + any EIP-6963 wallet      │
@@ -36,152 +34,67 @@ This is not a demo. It is a functioning Bradbury testnet application. The intell
 ├─────────────────────────────────────────────────────────────┤
 │              GENLAYER BRADBURY TESTNET                         │
 │                                                                │
-│  VaultManager   LendingMarket   BuilderFunding                │
-│  PredictionMarkets   ReputationSystem   EconomicEvents         │
-│  StakingReserve                                                │
+│  ReputationRegistry   EscrowAdjudicator (hero)                │
+│  VaultManager   PredictionMarket   CreditLine                 │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-There is no server-side relayer or backend API route — writes are signed directly by the connected wallet via `genlayer-js`, targeting Bradbury (chainId `4221`) at `https://rpc-bradbury.genlayer.com`.
+No server-side relayer, no backend API route. Every write is signed client-side by the connected wallet at chainId `4221`.
 
-The autonomous keeper (`keeper/cycle.mjs`) is a separate, optional process: it holds its own registered keeper key, reads every vault under management, and calls `rebalance_vault` on each — the same write path a human owner would use, just triggered on a schedule instead of a click.
+### 5 Intelligent Contracts
 
-### 7 Intelligent Contracts
+Every capital-moving decision uses `gl.eq_principle.prompt_non_comparative` (LLM reasoning validated by five-validator consensus) grounded in live web data fetched via `gl.eq_principle.strict_eq` + `gl.nondet.web.get`.
 
-Every contract uses `gl.eq_principle.prompt_non_comparative` (or `strict_eq` for raw data fetches) so validators reach consensus through reasoning, not just computation.
-
-| Contract | Purpose | AI Decision |
-|----------|---------|-------------|
-| **VaultManager** | Autonomous treasuries with stated objectives | Initial allocation at creation, and every rebalance across lending/staking/predictions/builders — using live CoinGecko + Fear & Greed data |
-| **LendingMarket** | Credit priced by market conditions | Approve/reject loans, set interest rate, assess risk score |
-| **BuilderFunding** | Milestone-gated ecosystem funding | Evaluate proposals, allocate partial/full funding |
-| **PredictionMarkets** | Questions contracts can resolve | Resolve binary markets with reasoned outcomes |
-| **ReputationSystem** | Score tracking across all sectors | Weighs the severity/context of each outcome to set the score delta, not a fixed constant |
-| **EconomicEvents** | System-wide event propagation | Assesses event severity and impact guidance |
-| **StakingReserve** | The reserve backing `allocation_staking` | Assigns per-position yield band + validator tier from live market context |
-
-All 7 contracts are independent — none take constructor arguments and none call each other. Current addresses live in [`src/lib/contracts.ts`](src/lib/contracts.ts).
-
----
-
-## Liquidity & settlement
-
-Every write that should move real value actually moves real value — no contract silently pretends to disburse or repay. That took two separate fixes to get right, worth explaining honestly rather than glossing over.
-
-### How a payout actually happens
-
-Sending native GEN out of a GenLayer intelligent contract isn't automatic — it requires declaring a small interface stub and calling a transfer through it:
-
-```python
-@gl.evm.contract_interface
-class _Recipient:
-    class View:
-        pass
-    class Write:
-        pass
-
-# ...inside a write method:
-_Recipient(Address(recipient_address)).emit_transfer(value=u256(amount))
-```
-
-This is GenLayer's documented pattern for sending to an externally-owned address ([Value Transfers](https://docs.genlayer.com/developers/intelligent-contracts/advanced-features/value-transfers)) — an early draft of `VaultManager.withdraw` called this without declaring the interface first, which is a plain `NameError`, not a platform limitation. Once verified against the docs and fixed, four methods now use it for real payouts, and each is bounds-checked so it can only ever send value the contract is actually holding:
-
-| Method | Pays out | Bounded by |
+| Contract | Purpose | What the AI actually decides |
 |---|---|---|
-| `VaultManager.withdraw` | A depositor's withdrawal | That vault's own tracked treasury (sum of its deposits) |
-| `StakingReserve.unstake` | A staker's principal | That position's staked amount |
-| `PredictionMarkets.claim_winnings` | A winner's stake + proportional share of the losing pool | Total staked on both sides of that market |
-| `LendingMarket.request_loan` / `BuilderFunding.submit_project` | An approved loan or grant | The contract's own pool balance (`get_pool_balance`) — see below |
+| **EscrowAdjudicator** *(hero)* | Locks capital against natural-language success criteria; a named provider accepts, submits evidence, anyone can challenge | `resolve()` fetches live web data (including the provider's own submitted evidence URL) and decides `full_release` / `partial` / `clawback`, with an exact `released_amount` |
+| **PredictionMarket** | Binary markets; anyone proposes an outcome after staking closes, anyone can challenge, the creator cannot self-resolve | `resolve()` independently re-derives the real answer from the question + live data — it can and does disagree with the proposal |
+| **VaultManager** | Mandate vaults: a stated objective + risk tolerance reasons which instrument types (escrow/prediction/credit) capital may enter | The initial mandate at creation, and any later `re_evaluate_mandate()` re-run by a keeper |
+| **CreditLine** | Borrower posts collateral + purpose; a separate lender funds the loan with their own capital (no platform-funded pool); contested defaults are adjudicated | Loan-to-value + interest rate at open; on a contested default, the exact collateral split between lender and borrower |
+| **ReputationRegistry** | Pull-based score tracking, only from adjudicated outcomes of the other four contracts | The magnitude of each score delta, weighed by the actual severity of the outcome — not a fixed constant |
 
-### The cGEN pool: what it is and why
-
-`LendingMarket` and `BuilderFunding` don't hold value because users deposited it (unlike vaults, staking, or prediction markets) — someone has to put capital in before the AI can approve anything against it. Since Bradbury is testnet and Compax controls the deployer account, both contracts have a `fund_pool()` method, owner-gated, that lets us top them up with real testnet GEN. Both pools were seeded with 100,000 cGEN on deploy.
-
-The disbursement logic is a **solvency gate**, not a suggestion: the AI evaluates a loan or proposal on its merits exactly as before, but the contract itself checks `int(self.balance)` against the requested amount right before recording the decision. If the pool can't cover what was approved, the stored outcome is downgraded — a would-be "approved" loan becomes "rejected," a would-be "funded" grant becomes "partial" or "rejected" — so what's written onchain always matches what was actually paid out. Nothing is ever recorded as approved with no capital behind it.
-
-```python
-pool_balance = int(self.balance)
-if approved and _amount > pool_balance:
-    approved = False   # AI said yes, pool says no — pool wins
-```
-
-### What this is honestly — and isn't
-
-This is a correct, solvency-safe settlement layer for a **testnet demonstration**. It is not yet a decentralized lending market, and calling it one on mainnet would be misleading. Specifically, as of this design:
-
-- **The pool is centralized.** It's funded by one owner-controlled EOA, not by permissionless liquidity providers who earn yield for supplying capital. On mainnet, "the pool" would just be the team's money, not a market.
-- **Loans are unsecured, with no enforced consequence for default.** `repay_loan` and `repay_funding` are voluntary — nothing locks collateral, and nothing liquidates or penalizes a borrower who simply never calls them. `ReputationSystem` could reflect a default, but that call isn't wired anywhere yet (no contract in this app calls another contract).
-- **Interest is decorative right now.** `LendingMarket` stores an AI-set `interest_rate_bps` per loan, but `repay_loan` only requires repaying the principal (`repay_value >= l["amount"]`) — the rate isn't actually collected. It reads as real APR in the UI; today it isn't charged.
-- **Rates aren't market-derived.** The AI sets a rate/allocation per request by reasoning over live market data, not from a supply/utilization curve the way a real money market (Aave-style) prices credit.
-
-### What would need to change for mainnet
-
-In rough order of how load-bearing they are:
-
-1. **Collateral or enforceable credit risk.** Either require locked collateral (over-collateralized, standard DeFi pattern) or build real recourse for under-collateralized lending — automatic reputation slashing, a liquidation path, or both. Reasoning about risk is not the same as bearing consequences for being wrong.
-2. **Actually collect interest.** `repay_loan` needs to require principal + accrued interest, not just principal, and that interest needs to flow somewhere — back into the pool (compounding it for future borrowers) is the simplest version.
-3. **Decentralize the pool.** Replace the single owner `fund_pool()` with permissionless LP deposits that mint a claim on the pool (a share, not a fixed loan), with yield distributed from collected interest. This turns "the pool" into an actual market instead of a treasury we personally top up.
-4. **Wire the reputation loop.** `ReputationSystem.record_loan_repayment` / `record_funding_repayment` exist and already reason about severity — they just need to actually be called (from a keeper, or from the repay/default path itself) so reputation reflects real behavior automatically instead of never firing.
-5. **Rate curves, not rate guesses.** Once there's real utilization (pool borrowed / pool supplied), rates should respond to that mechanically, with the AI's live-market reasoning as a secondary adjustment on top — not the sole input.
-6. **An actual audit.** None of this has been reviewed by anyone but the person who wrote it. Before real value touches any of these contracts, that has to happen.
-
-None of this is a criticism of the current build for what it's for — it's an accurate settlement layer for a testnet demo of AI-reasoned finance, and every payout it makes is provably bounded by real value the contract holds. It just isn't, and shouldn't be presented as, a production lending protocol yet.
+All 5 contracts are independent at deploy time — see [`contracts/deploy_order.md`](contracts/deploy_order.md) for why, and how reputation and vault capital-movement actually work as a result. Current addresses: [`src/lib/contracts.ts`](src/lib/contracts.ts).
 
 ---
 
-## Pages
+## What was deliberately left out of this version
 
-| Route | Purpose |
-|-------|---------|
-| `/` | Landing — the Terminal (product UI as hero), how it works, validator consensus, four sectors |
-| `/ecosystem` | Overview — network-wide TVL, allocation, vaults, prediction markets, event feed |
-| `/vaults` | Vault marketplace — browse and create vaults |
-| `/vaults/create` | Create a vault — name, strategy, objective, risk tolerance |
-| `/vaults/[id]` | Vault detail — Brain (last decision + active event), Treasury (allocation + metadata), History (every rebalance, expandable) |
-| `/lending` | Request a loan — AI evaluates approval, rate, and risk |
-| `/builders` | Submit a funding proposal — AI evaluates fund/reject/partial |
-| `/predictions` | Create and stake on prediction markets |
-| `/staking` | Reserve composition, yield tiers |
-| `/reputation` | Score, sector breakdown, action timeline |
-| `/faucet` | One-time cGEN claim |
+Cut from an earlier iteration of this app, and not brought back here, because they contradict what GenLayer is actually for:
+
+- Centralized AI-gated lending pools that disburse without an opposing party (a real lender always funds a `CreditLine`, with their own capital)
+- Decorative interest that's calculated but never actually collected (`CreditLine.repay` requires principal + interest, checked onchain)
+- Contracts that never update reputation (every outcome here is pullable into `ReputationRegistry`)
+- Fake "allocation" percentages that never move real capital (`VaultManager` only ever moves capital via a real value transfer, gated on the vault's actual mandate)
+- Owner-only market resolution (`PredictionMarket.resolve` is permissionless; the creator cannot force their own proposal through)
+- Unsecured, no-recourse lending (`CreditLine` is always collateralized, with real contested-default adjudication)
 
 ---
 
-## Design Language
+## Honest limitations
 
-Institutional, dark by default (`[data-theme="light"]` override available).
+This is a testnet build, verified end-to-end with real transactions — see [SUBMISSION.md](SUBMISSION.md) for the actual test transcripts — but it has real, documented gaps:
 
-- **Typography**: Archivo (UI), JetBrains Mono (data/labels), Instrument Serif italic (reasoning/objective quotes)
-- **Color**: Ground `#070F12`, Primary `#00C27A`, Signal `#5FE3A8`, Amber `#E8A33D`, Clay `#E0654A`
-- **Motion**: Lenis smooth scroll + `Reveal`/`RevealGroup`/`RevealItem` (rise + fade, staggered)
-- **Consensus glyph**: only ever renders a state we actually know — `ACCEPTED` (five validators agreed, real chain semantics) or an unresolved/deliberating state. It never fabricates a per-validator vote breakdown, since no contract exposes one.
+- **No onchain wall-clock.** No contract on this GenVM build has a verified way to check "has this deadline passed" — every timestamp field here is stored as `""`. Deadline enforcement for the keeper happens off-chain, in `keeper/cycle.mjs`, where `Date.now()` is trivially available; the contracts themselves accept `resolve()` whenever evidence/a proposal exists, deadline or not.
+- **Cross-contract writes don't work on this GenVM build.** Confirmed twice: a contract calling another contract's write method via `gl.get_contract_at(addr).emit(on=...).method(args)` has its own transaction accepted, but the target's state silently never changes. This is why reputation is pull-based (see `contracts/deploy_order.md`) rather than pushed automatically when an escrow resolves — a party or keeper has to explicitly claim it in a separate transaction.
+- **Storage is `TreeMap[str, str]` with JSON values, not typed dataclasses.** `@allow_storage`/`@dataclass` and even plain non-`str` `TreeMap` value types were pilot-tested on this build and silently became permanently unreadable after deploy, despite the deploy transaction itself succeeding. `TreeMap[str, str]` is the only pattern verified to read reliably.
+- **Amounts are raw integers, not wei-scaled.** A "10,000 cGEN" escrow is `value: 10000n`, not `10000n * 10^18`. Consistent throughout, but worth knowing if you're checking balance deltas.
 
 ---
 
 ## Getting Started (local dev)
-
-### Prerequisites
-
-- Node.js 18+
-- A GenLayer Bradbury testnet account with cGEN, and MetaMask configured for chainId `4221`
-
-### Install & Run
 
 ```bash
 npm install
 npm run dev
 ```
 
-Writes are signed by whatever wallet the user connects in the browser — no server-side key is needed to run the frontend locally.
+No environment variables are required for the frontend — reads and writes both happen client-side against Bradbury. Connect any EIP-6963 wallet (MetaMask, Rabby, Coinbase Wallet, etc.) configured for chainId `4221`.
 
 ### Optional: the autonomous keeper
 
-The keeper is a separate script, not required for the frontend:
-
 ```bash
-cp deploy/.env.example deploy/.env   # if present, else create deploy/.env
 # deploy/.env:
-#   ACCOUNT_PRIVATE_KEY=0x...        # a GenLayer account registered as a keeper via add_keeper
+#   ACCOUNT_PRIVATE_KEY=0x...   # a registered keeper key — see contracts/deploy_order.md
 
 npm run keeper:dry     # one cycle, no writes
 npm run keeper         # one cycle
@@ -193,31 +106,28 @@ npm run keeper:loop    # runs forever, every INTERVAL_MIN (default 30)
 ### Redeploying contracts
 
 ```bash
-node deploy/deploy.mjs                # deploy all 7 fresh
-node deploy/redeploy-fixed.mjs        # redeploy VaultManager + ReputationSystem only
+node deploy/deploy.mjs
 ```
 
-See [`contracts/deploy_order.md`](contracts/deploy_order.md). After any deploy, update the addresses in `src/lib/contracts.ts`.
+Deploys all 5, verifies each is readable, and registers the trusted-source relationships `ReputationRegistry` needs. Update `src/lib/contracts.ts` with the printed addresses afterward.
 
 ---
 
 ## Deploying to production (Vercel)
 
-1. Push this repo to GitHub and import it in Vercel.
-2. No environment variables are required for the frontend itself — all reads and writes happen client-side against Bradbury.
-3. Set `NEXT_PUBLIC_SITE_URL` to the app's production URL (used for OpenGraph/Twitter metadata in `src/app/layout.tsx`).
-4. If running the keeper as a scheduled job (e.g. a cron worker, not on Vercel's edge), keep `ACCOUNT_PRIVATE_KEY` in that worker's own secret store — it is never read by the Next.js app.
-5. `next.config.ts` sets baseline security headers (CSP, X-Frame-Options, etc.) for all routes.
+1. Push to GitHub, import in Vercel.
+2. No environment variables required — everything is client-side against Bradbury.
+3. Optionally set `NEXT_PUBLIC_SITE_URL` for OpenGraph/Twitter metadata.
+4. Run the keeper as a separate scheduled job if you want it — its private key never touches the Next.js app.
 
 ---
 
 ## Tech Stack
 
-- **Frontend**: Next.js 16, React 19, TypeScript, Turbopack
-- **Chain**: GenLayer Bradbury Testnet
+- **Frontend**: Next.js 16, React 19, TypeScript, Tailwind CSS v4, Framer Motion, Radix UI primitives
+- **Chain**: GenLayer Bradbury Testnet (chainId `4221`)
 - **Client SDK**: `genlayer-js`
-- **Fonts**: Archivo, JetBrains Mono, Instrument Serif (Google Fonts via `next/font`)
-- **Motion**: Framer Motion, Lenis
+- **Wallet**: EIP-6963 multi-wallet discovery
 
 ---
 
@@ -226,54 +136,39 @@ See [`contracts/deploy_order.md`](contracts/deploy_order.md). After any deploy, 
 ```
 src/
 ├── app/
-│   ├── page.tsx               # Landing
-│   ├── ecosystem/page.tsx     # Overview
-│   ├── vaults/
-│   │   ├── page.tsx           # Marketplace
-│   │   ├── create/page.tsx    # Create Vault
-│   │   └── [id]/page.tsx      # Vault Detail
-│   ├── lending/page.tsx
-│   ├── builders/page.tsx
-│   ├── predictions/page.tsx
-│   ├── staking/page.tsx
-│   ├── reputation/page.tsx
-│   ├── faucet/page.tsx
-│   ├── error.tsx               # Route-level error boundary
-│   ├── not-found.tsx           # 404
-│   └── global-error.tsx        # Root layout crash fallback
-├── components/compax/
-│   ├── AppShell.tsx            # Rail nav, degraded banner
-│   ├── Terminal.tsx            # Hero — the product UI itself
-│   ├── Allocation.tsx          # AllocationPanel
-│   ├── Engine.tsx              # EngineFingerprint, ConsensusGlyph
-│   ├── DecisionRecord.tsx      # Expandable rebalance history row
-│   ├── TxStatus.tsx            # Deliberation readout for in-flight writes
-│   ├── Reveal.tsx              # Scroll-entrance system
-│   ├── SmoothScroll.tsx        # Lenis
-│   └── primitives.tsx          # PageHead, StatTile, Panel, EmptyState, Tag
+│   ├── page.tsx                # Dashboard
+│   ├── vaults/                 # list, [id], create
+│   ├── escrows/                # list, [id], create
+│   ├── markets/                # list, [id], create
+│   ├── credit/                 # list (fund/repay/default via modal), create
+│   ├── reputation/page.tsx     # ReputationPassport
+│   ├── history/page.tsx        # Global activity feed
+│   ├── settings/page.tsx       # Network, wallet, contract addresses
+│   ├── error.tsx · not-found.tsx · global-error.tsx
+├── components/
+│   ├── deliberation/DeliberationTheater.tsx   # The live consensus UI
+│   ├── ui/                     # Button, Card, Badge, Input, Slider, Modal, States
+│   └── layout/AppShell.tsx     # Sidebar (desktop) / bottom nav (mobile), wallet control
 ├── hooks/
-│   ├── useContract.ts          # Typed hooks for all 7 contracts
-│   └── useWallet.ts            # EIP-6963 multi-wallet connect/chain-switch/account tracking
+│   ├── useContract.ts          # Typed reads/writes for all 5 contracts
+│   ├── useDeliberation.ts      # Drives a write through the real GenLayer consensus lifecycle
+│   └── useWallet.ts            # EIP-6963 connect/chain-switch/account tracking
 ├── lib/
-│   ├── contracts.ts            # Deployed contract addresses
-│   ├── genlayer.ts             # Read/write client wrappers (client-side signing)
-│   └── walletProviders.ts      # EIP-6963 wallet discovery
+│   ├── contracts.ts            # Deployed addresses, network constants
+│   ├── genlayer.ts             # Read/write client wrappers
+│   └── walletProviders.ts      # EIP-6963 discovery
 contracts/
+├── interfaces.py                # Reference copy of the _Recipient pattern
+├── ReputationRegistry.py
+├── EscrowAdjudicator.py         # Hero contract
 ├── VaultManager.py
-├── LendingMarket.py
-├── BuilderFunding.py
-├── PredictionMarkets.py
-├── ReputationSystem.py
-├── EconomicEvents.py
-├── StakingReserve.py
+├── PredictionMarket.py
+├── CreditLine.py
 └── deploy_order.md
 keeper/
-└── cycle.mjs                   # Autonomous allocation heartbeat
+└── cycle.mjs                    # Autonomous resolve() heartbeat
 deploy/
-├── deploy.mjs                  # Deploy all 7 contracts
-├── redeploy-fixed.mjs          # Redeploy VaultManager + ReputationSystem
-├── redeploy-settlement.mjs     # Redeploy VaultManager + StakingReserve + PredictionMarkets
-└── redeploy-liquidity.mjs      # Redeploy + fund LendingMarket + BuilderFunding pools
+└── deploy.mjs                   # Deploy all 5 + register trusted sources
 ```
 
 ---
