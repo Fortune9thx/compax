@@ -12,7 +12,6 @@ class _Recipient:
 
 
 def _sanitize(s: str, max_len: int = 500) -> str:
-    """Strip prompt-structuring chars and cap length."""
     for ch in ("{", "}", "[", "]", "`", '"', "#"):
         s = s.replace(ch, "")
     s = s.replace("\\n", " ").replace("\n", " ").replace("\r", " ").replace("\t", " ")
@@ -20,159 +19,153 @@ def _sanitize(s: str, max_len: int = 500) -> str:
 
 
 class VaultManager(gl.Contract):
+    """
+    Mandate vaults: a user states a natural-language objective + risk
+    tolerance; an intelligent contract reasons which instrument types
+    (escrow, prediction, credit) the mandate permits. Capital can only leave
+    the vault via withdraw() (back to the owner) or move_to_* (released to
+    the owner, gated on the mandate having actually approved that instrument
+    type for this vault).
+
+    Design note — why move_to_* releases capital to the OWNER instead of
+    directly funding the target instrument contract in one call: this
+    GenVM build's cross-contract WRITE calls
+    (gl.get_contract_at(addr).emit(on=...).method(args)) are confirmed
+    broken — the calling contract's tx accepts, the target's state never
+    changes (see contracts/deploy_order.md). A single atomic
+    "vault -> new escrow" call is therefore not reliably achievable. What IS
+    proven to work is a plain value transfer with no method call
+    (_Recipient(...).emit_transfer(value=...), used throughout this
+    contract's withdraw/move_to_*), so move_to_* enforces the mandate
+    constraint onchain, decrements the vault's treasury, and releases the
+    real capital to the vault owner's own wallet — who then creates the
+    actual escrow/market/credit-line themselves as a direct, separate
+    transaction, naming themselves as funder/staker/borrower. The mandate
+    gate (you cannot release capital toward an instrument type the AI never
+    approved for this vault) is enforced here regardless; only the literal
+    single-transaction atomicity is not.
+    """
+
     vaults: TreeMap[str, str]
-    rebalance_history: TreeMap[str, str]
-    rebalance_counts: TreeMap[str, str]
-    depositor_balances: TreeMap[str, str]
-    keepers: TreeMap[str, str]
-    cycle_count: u256
     vault_counter: u256
+    keepers: TreeMap[str, str]
     _owner: str
 
     def __init__(self) -> None:
         self.vaults = TreeMap[str, str]()
-        self.rebalance_history = TreeMap[str, str]()
-        self.rebalance_counts = TreeMap[str, str]()
-        self.depositor_balances = TreeMap[str, str]()
-        self.keepers = TreeMap[str, str]()
-        self.cycle_count = u256(0)
         self.vault_counter = u256(0)
+        self.keepers = TreeMap[str, str]()
         self._owner = str(gl.message.sender_address)
 
-    # ── keeper registry ───────────────────────────────────────────────
-    # The vault manager is autonomous: a registered keeper may run the
-    # allocation cycle without the vault owner present. The keeper cannot
-    # move funds — it can only ask the contract to reason and reallocate.
+    # ── keeper registry — re-evaluation only, never moves funds ────────
 
-    @gl.public.write
-    def add_keeper(self, address: str) -> str:
+    def _only_owner(self) -> None:
         if str(gl.message.sender_address) != self._owner:
             raise gl.vm.UserError("unauthorized: owner only")
-        addr = _sanitize(address, 64)
-        if not addr:
-            raise gl.vm.UserError("address required")
-        self.keepers[addr.lower()] = "active"
-        return "keeper_added"
 
-    @gl.public.write
-    def remove_keeper(self, address: str) -> str:
-        if str(gl.message.sender_address) != self._owner:
-            raise gl.vm.UserError("unauthorized: owner only")
-        addr = _sanitize(address, 64).lower()
-        if addr in self.keepers:
-            self.keepers[addr] = "revoked"
-        return "keeper_removed"
-
-    @gl.public.view
-    def is_keeper(self, address: str) -> bool:
+    def _is_keeper(self, address: str) -> bool:
         a = address.lower()
         return a in self.keepers and self.keepers[a] == "active"
 
-    @gl.public.view
-    def get_cycle_count(self) -> int:
-        return int(self.cycle_count)
-
-    def _fallback_allocation(self, strategy: str) -> tuple:
-        """Used only if the LLM response fails to parse — not the primary path."""
-        if strategy == "conservative":
-            return (50, 40, 0, 10)
-        elif strategy == "growth":
-            return (20, 20, 20, 40)
-        elif strategy == "balanced":
-            return (30, 30, 10, 30)
-        else:
-            return (25, 25, 25, 25)
-
-    def _reasoned_initial_allocation(self, strategy: str, objective: str, risk: int, personality: str) -> tuple:
-        """The vault's first allocation is a real council decision, not a lookup table."""
-        result_str = gl.eq_principle.prompt_non_comparative(
-            lambda: (
-                f"You are setting the initial capital allocation for a newly created vault.\n"
-                f"Strategy: {strategy} | Personality: {personality} | Risk Tolerance: {risk}/10\n"
-                f"Objective: {objective}\n"
-                f"[TASK]\nChoose an initial split across Lending, Staking, Predictions, and Builders "
-                f"that reflects the stated strategy, risk tolerance, and objective. All four values "
-                f"must sum to 100. Higher risk tolerance and growth-oriented strategies should carry "
-                f"more Predictions/Builders exposure; conservative, low-risk strategies should weight "
-                f"Lending/Staking more heavily.\n"
-                f"Return ONLY valid JSON with no extra text: "
-                f'{{\"lending\": <int>, \"staking\": <int>, \"predictions\": <int>, '
-                f'\"builders\": <int>, \"reason\": \"<1-2 sentences>\"}}'
-            ),
-            task="Set the initial capital allocation split for a new vault",
-            criteria=(
-                "All four percentages are non-negative integers summing to exactly 100. "
-                "The split is consistent with the stated strategy and risk tolerance."
-            ),
-        )
-        try:
-            parsed = json.loads(result_str)
-            nl = max(0, int(parsed.get("lending", 25)))
-            ns = max(0, int(parsed.get("staking", 25)))
-            np_ = max(0, int(parsed.get("predictions", 25)))
-            nb = max(0, int(parsed.get("builders", 25)))
-            reason = _sanitize(str(parsed.get("reason", "")), 300)
-            total = nl + ns + np_ + nb
-            if total != 100 and total > 0:
-                nl = round(nl * 100 / total)
-                ns = round(ns * 100 / total)
-                np_ = round(np_ * 100 / total)
-                nb = 100 - nl - ns - np_
-            if not reason:
-                reason = "Initial allocation set by vault council at creation."
-            return nl, ns, np_, nb, reason
-        except Exception:
-            nl, ns, np_, nb = self._fallback_allocation(strategy)
-            return nl, ns, np_, nb, "Initial allocation set at vault creation (fallback split)."
+    @gl.public.write
+    def add_keeper(self, address: str) -> str:
+        self._only_owner()
+        addr = _sanitize(address, 64).lower()
+        if not addr:
+            raise gl.vm.UserError("address required")
+        self.keepers[addr] = "active"
+        return "added"
 
     @gl.public.write
-    def create_vault(self, name: str, strategy: str, objective: str,
-                     risk_tolerance: u256, personality: str) -> str:
-        # Input validation
+    def remove_keeper(self, address: str) -> str:
+        self._only_owner()
+        addr = _sanitize(address, 64).lower()
+        if addr in self.keepers:
+            self.keepers[addr] = "revoked"
+        return "removed"
+
+    @gl.public.view
+    def is_keeper(self, address: str) -> bool:
+        return self._is_keeper(address)
+
+    # ── vault lifecycle ────────────────────────────────────────────
+
+    @gl.public.write
+    def create_vault(self, name: str, objective: str, risk_tolerance: u256, personality: str) -> str:
         name = _sanitize(name, 80)
-        strategy = _sanitize(strategy, 30)
-        objective = _sanitize(objective, 400)
+        objective = _sanitize(objective, 500)
         personality = _sanitize(personality, 50)
         if not name:
             raise gl.vm.UserError("name is required")
-        valid_strategies = ("conservative", "growth", "balanced", "institutional")
-        if strategy not in valid_strategies:
-            strategy = "balanced"
+        if not objective:
+            raise gl.vm.UserError("objective is required")
         risk = max(1, min(10, int(risk_tolerance)))
 
         owner = str(gl.message.sender_address)
         vault_id = f"VAULT-{int(self.vault_counter)}"
         self.vault_counter = u256(int(self.vault_counter) + 1)
 
-        lending, staking, predictions, builders, init_reason = self._reasoned_initial_allocation(
-            strategy, objective, risk, personality
-        )
+        allowed, mandate_reasoning = self._reasoned_allowed_instruments(objective, risk, personality)
+
         vault = json.dumps({
             "id": vault_id,
-            "name": name,
             "owner": owner,
-            "strategy": strategy,
+            "name": name,
             "objective": objective,
             "risk_tolerance": risk,
-            "treasury": 0,
-            "allocation_lending": lending,
-            "allocation_staking": staking,
-            "allocation_predictions": predictions,
-            "allocation_builders": builders,
-            "last_rebalance": "",
-            "last_rebalance_reason": init_reason,
-            "total_yield": 0,
             "personality": personality,
-            "created_at": "",
+            "treasury": 0,
+            "allowed_instruments": allowed,
+            "mandate_reasoning": mandate_reasoning,
             "deposit_count": 0,
+            "status": "active",
+            "created_at": "",
         })
         self.vaults[vault_id] = vault
         return vault_id
 
+    def _reasoned_allowed_instruments(self, objective: str, risk: int, personality: str) -> tuple:
+        result_str = gl.eq_principle.prompt_non_comparative(
+            lambda: (
+                f"You are setting the mandate constraints for a new capital vault "
+                f"on COMPAX, an autonomous capital-adjudication platform.\n"
+                f"Objective: {objective}\n"
+                f"Risk tolerance: {risk}/10\n"
+                f"Personality: {personality}\n"
+                f"[TASK]\nDecide which instrument types this vault's capital is "
+                f"permitted to be committed toward: any non-empty subset of "
+                f"\"escrow\", \"prediction\", \"credit\". A conservative, "
+                f"low-risk mandate should generally avoid volatile instruments "
+                f"like prediction markets unless the objective explicitly calls "
+                f"for it. A mandate focused on paying for deliverables should "
+                f"include escrow. A mandate open to earning yield on lending "
+                f"should include credit.\n"
+                f"Return ONLY valid JSON with no extra text: "
+                f'{{\"allowed\": [\"escrow\"|\"prediction\"|\"credit\", ...], '
+                f'\"reasoning\": \"<1-2 sentences>\"}}'
+            ),
+            task="Determine which capital instrument types a new vault's mandate permits",
+            criteria=(
+                "allowed is a non-empty JSON array containing only the strings "
+                "escrow, prediction, and/or credit, with no duplicates. "
+                "reasoning is consistent with the stated objective and risk tolerance."
+            ),
+        )
+        try:
+            parsed = json.loads(result_str)
+            allowed = [a for a in parsed.get("allowed", []) if a in ("escrow", "prediction", "credit")]
+            if not allowed:
+                allowed = ["escrow"]
+            allowed = sorted(set(allowed))
+            reasoning = _sanitize(str(parsed.get("reasoning", "")), 300)
+        except Exception:
+            allowed = ["escrow"]
+            reasoning = "Defaulted to escrow-only after failing to parse mandate reasoning."
+        return allowed, reasoning
+
     @gl.public.write.payable
     def deposit(self, vault_id: str) -> str:
         vault_id = _sanitize(vault_id, 20)
-        depositor = str(gl.message.sender_address)
         amount = int(gl.message.value)
         if amount <= 0:
             raise gl.vm.UserError("deposit amount must be positive")
@@ -182,9 +175,6 @@ class VaultManager(gl.Contract):
         v["treasury"] = v["treasury"] + amount
         v["deposit_count"] = v["deposit_count"] + 1
         self.vaults[vault_id] = json.dumps(v)
-        bal_key = f"{vault_id}_{depositor}"
-        current = int(self.depositor_balances[bal_key]) if bal_key in self.depositor_balances else 0
-        self.depositor_balances[bal_key] = str(current + amount)
         return "deposited"
 
     @gl.public.write
@@ -197,128 +187,72 @@ class VaultManager(gl.Contract):
         if vault_id not in self.vaults:
             raise gl.vm.UserError("vault_not_found")
         v = json.loads(self.vaults[vault_id])
-        bal_key = f"{vault_id}_{sender}"
-        balance = int(self.depositor_balances[bal_key]) if bal_key in self.depositor_balances else 0
-        if amt > balance:
-            raise gl.vm.UserError("insufficient_balance")
+        if sender.lower() != v["owner"].lower():
+            raise gl.vm.UserError("unauthorized: only the vault owner can withdraw")
         if amt > v["treasury"]:
             raise gl.vm.UserError("insufficient_treasury")
-        # CEI: update state before the external transfer
+
         v["treasury"] = v["treasury"] - amt
         self.vaults[vault_id] = json.dumps(v)
-        self.depositor_balances[bal_key] = str(balance - amt)
         _Recipient(Address(sender)).emit_transfer(value=u256(amt))
         return "withdrawn"
 
-    @gl.public.write
-    def rebalance_vault(self, vault_id: str, event_context: str) -> str:
+    def _move_to(self, vault_id: str, amount: u256, instrument: str) -> str:
         vault_id = _sanitize(vault_id, 20)
+        sender = str(gl.message.sender_address)
+        amt = int(amount)
+        if amt <= 0:
+            raise gl.vm.UserError("amount must be positive")
         if vault_id not in self.vaults:
             raise gl.vm.UserError("vault_not_found")
         v = json.loads(self.vaults[vault_id])
-        # The owner, or a registered keeper running the autonomous cycle.
-        # A keeper can only trigger reasoning — it cannot move funds.
-        caller = str(gl.message.sender_address)
-        _k = caller.lower()
-        _is_keeper = _k in self.keepers and self.keepers[_k] == "active"
-        if caller != v["owner"] and not _is_keeper:
-            raise gl.vm.UserError("only_owner_or_keeper_can_rebalance")
-        triggered_by = "keeper" if (_is_keeper and caller != v["owner"]) else "owner"
+        if sender.lower() != v["owner"].lower():
+            raise gl.vm.UserError("unauthorized: only the vault owner can move capital")
+        if instrument not in v["allowed_instruments"]:
+            raise gl.vm.UserError(f"mandate_violation: this vault's mandate does not permit {instrument}")
+        if amt > v["treasury"]:
+            raise gl.vm.UserError("insufficient_treasury")
 
-        # Sanitize caller-supplied event context (prompt injection fix — H3/C2)
-        event_context = _sanitize(event_context, 300) if event_context else "No active economic event."
-
-        _name = v["name"]
-        _obj = v["objective"]
-        _risk = v["risk_tolerance"]
-        _strat = v["strategy"]
-        _pers = v["personality"]
-        _lending = v["allocation_lending"]
-        _staking = v["allocation_staking"]
-        _pred = v["allocation_predictions"]
-        _build = v["allocation_builders"]
-        _treasury = v["treasury"]
-
-        # Multi-source market data fetch — mitigates single-oracle risk (H4 fix)
-        def _fetch_coingecko() -> str:
-            r = gl.nondet.web.get(
-                "https://api.coingecko.com/api/v3/simple/price"
-                "?ids=bitcoin,ethereum,usd-coin&vs_currencies=usd&include_24hr_change=true"
-            )
-            return r.body.decode("utf-8")[:800]
-
-        def _fetch_fear_greed() -> str:
-            r = gl.nondet.web.get("https://api.alternative.me/fng/?limit=1")
-            return r.body.decode("utf-8")[:300]
-
-        market_prices = gl.eq_principle.strict_eq(_fetch_coingecko)
-        market_sentiment = gl.eq_principle.strict_eq(_fetch_fear_greed)
-
-        result_str = gl.eq_principle.prompt_non_comparative(
-            lambda: (
-                f"You are an AI vault council making a capital reallocation decision.\n"
-                f"[VAULT]\nName: {_name} | Strategy: {_strat} | Personality: {_pers}\n"
-                f"Objective: {_obj}\nRisk Tolerance: {_risk}/10 | Treasury: {_treasury} cGEN\n"
-                f"Current Allocation: Lending={_lending}% Staking={_staking}% "
-                f"Predictions={_pred}% Builders={_build}%\n"
-                f"[CONTEXT]\nEconomic Event: {event_context}\n"
-                f"[LIVE MARKET DATA — CoinGecko]\n{market_prices}\n"
-                f"[LIVE SENTIMENT — Fear & Greed Index]\n{market_sentiment}\n"
-                f"[TASK]\nDecide optimal allocation using live data. All four values must sum to 100.\n"
-                f"Return ONLY valid JSON with no extra text:\n"
-                f'{{\"lending\": <int>, \"staking\": <int>, \"predictions\": <int>, '
-                f'"builders\": <int>, \"reason\": \"<2-3 sentences citing specific market data>\"}}'
-            ),
-            task="Determine optimal DeFi capital allocation using multi-source live market data",
-            criteria=(
-                "All four percentages are non-negative integers summing to exactly 100. "
-                "Reason explicitly cites live market data or sentiment index. "
-                "Allocation reflects the vault strategy and risk tolerance."
-            ),
-        )
-
-        try:
-            parsed = json.loads(result_str)
-            nl = max(0, int(parsed.get("lending", _lending)))
-            ns = max(0, int(parsed.get("staking", _staking)))
-            np_ = max(0, int(parsed.get("predictions", _pred)))
-            nb = max(0, int(parsed.get("builders", _build)))
-            reason = str(parsed.get("reason", ""))[:600]
-            total = nl + ns + np_ + nb
-            if total != 100 and total > 0:
-                nl = round(nl * 100 / total)
-                ns = round(ns * 100 / total)
-                np_ = round(np_ * 100 / total)
-                nb = 100 - nl - ns - np_
-        except Exception:
-            nl, ns, np_, nb = _lending, _staking, _pred, _build
-            reason = "Rebalance parsing failed; maintaining current allocation."
-
-        count = int(self.rebalance_counts[vault_id]) if vault_id in self.rebalance_counts else 0
-        rec = json.dumps({
-            "vault_id": vault_id,
-            "old_lending": _lending, "old_staking": _staking,
-            "old_predictions": _pred, "old_builders": _build,
-            "new_lending": nl, "new_staking": ns,
-            "new_predictions": np_, "new_builders": nb,
-            "reason": reason,
-            "event_context": event_context,
-            "market_snapshot": market_prices[:400],
-            "sentiment_snapshot": market_sentiment[:200],
-            "triggered_by": triggered_by,
-            "timestamp": "",
-        })
-        self.rebalance_history[f"{vault_id}_{count}"] = rec
-        self.rebalance_counts[vault_id] = str(count + 1)
-        self.cycle_count = u256(int(self.cycle_count) + 1)
-
-        v["allocation_lending"] = nl
-        v["allocation_staking"] = ns
-        v["allocation_predictions"] = np_
-        v["allocation_builders"] = nb
-        v["last_rebalance_reason"] = reason
+        v["treasury"] = v["treasury"] - amt
         self.vaults[vault_id] = json.dumps(v)
-        return reason
+        _Recipient(Address(sender)).emit_transfer(value=u256(amt))
+        return f"released_for_{instrument}"
+
+    @gl.public.write
+    def move_to_escrow(self, vault_id: str, amount: u256) -> str:
+        """Releases mandate-approved capital to the vault owner, who then
+        creates the real escrow themselves via EscrowAdjudicator.create_escrow()."""
+        return self._move_to(vault_id, amount, "escrow")
+
+    @gl.public.write
+    def move_to_prediction(self, vault_id: str, amount: u256) -> str:
+        return self._move_to(vault_id, amount, "prediction")
+
+    @gl.public.write
+    def move_to_credit(self, vault_id: str, amount: u256) -> str:
+        return self._move_to(vault_id, amount, "credit")
+
+    @gl.public.write
+    def re_evaluate_mandate(self, vault_id: str, event_context: str) -> str:
+        """Keeper-only re-evaluation of which instrument types the mandate
+        permits, given new context (e.g. a market event). Cannot move funds."""
+        vault_id = _sanitize(vault_id, 20)
+        caller = str(gl.message.sender_address)
+        if not self._is_keeper(caller) and caller != self._owner:
+            raise gl.vm.UserError("unauthorized: keeper or owner only")
+        if vault_id not in self.vaults:
+            raise gl.vm.UserError("vault_not_found")
+        v = json.loads(self.vaults[vault_id])
+
+        event_context = _sanitize(event_context, 300) if event_context else "No new context provided."
+        objective = f"{v['objective']} [Re-evaluation context: {event_context}]"
+        allowed, reasoning = self._reasoned_allowed_instruments(objective, v["risk_tolerance"], v["personality"])
+        v["allowed_instruments"] = allowed
+        v["mandate_reasoning"] = reasoning
+        self.vaults[vault_id] = json.dumps(v)
+        return "re_evaluated"
+
+    # ── views ────────────────────────────────────────────────────────
 
     @gl.public.view
     def get_vault(self, vault_id: str) -> dict:
@@ -340,34 +274,5 @@ class VaultManager(gl.Contract):
         return result
 
     @gl.public.view
-    def get_total_tvl(self) -> int:
-        total = 0
-        for v in self.vaults.values():
-            total += json.loads(v)["treasury"]
-        return total
-
-    @gl.public.view
-    def get_active_vault_count(self) -> int:
+    def get_vault_count(self) -> int:
         return int(self.vault_counter)
-
-    @gl.public.view
-    def get_rebalance_history(self, vault_id: str, offset: int = 0, limit: int = 100) -> list:
-        if vault_id not in self.rebalance_counts:
-            return []
-        limit = max(1, min(200, limit))
-        offset = max(0, offset)
-        count = int(self.rebalance_counts[vault_id])
-        result = []
-        end = min(count, offset + limit)
-        for i in range(offset, end):
-            key = f"{vault_id}_{i}"
-            if key in self.rebalance_history:
-                result.append(json.loads(self.rebalance_history[key]))
-        return result
-
-    @gl.public.view
-    def get_depositor_balance(self, vault_id: str, address: str) -> int:
-        key = f"{vault_id}_{address}"
-        if key not in self.depositor_balances:
-            return 0
-        return int(self.depositor_balances[key])

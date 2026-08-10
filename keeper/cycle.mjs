@@ -1,13 +1,26 @@
-/* ─── Compax keeper — the autonomous allocation cycle ────────────────────
-   The intelligent contract is the portfolio manager. This process is only
-   its heartbeat: it does not decide anything and it cannot move funds. Each
-   cycle it reads the active economic event, then asks every vault's contract
-   to reason over live market data and reallocate itself.
+/* ─── Compax v2 keeper — the autonomous adjudication heartbeat ───────────
+   Reads every open escrow and every proposed/challenged market that's past
+   its stated deadline, and asks the relevant contract to resolve() itself.
+   The keeper decides nothing — resolve() still runs the real five-validator
+   adjudication onchain, fetching its own live web data and reasoning fresh.
+   The keeper only decides WHEN to ask, never WHAT the answer is, and never
+   touches user funds (no method it calls accepts or moves value).
 
-   All judgement happens onchain, inside rebalance_vault:
-     · gl.nondet.web.get  → live CoinGecko prices + Fear & Greed index
-     · gl.eq_principle    → five validators independently evaluate the result
-     · the decision, its reasoning, and the raw data it read are all stored
+   Deadline enforcement: contracts on this GenVM build have no verified
+   wall-clock primitive (every contract in this codebase stores timestamps
+   as "" and ships on tx ordering — see contracts/deploy_order.md). Real
+   date comparison therefore has to happen here, off-chain, where Date.now()
+   is trivially available — not inside the contract, which can't do it
+   reliably. If a stored deadline string doesn't parse as a real date, this
+   keeper treats the instrument as eligible rather than silently skipping it
+   forever.
+
+   Vault mandate re-evaluation is NOT run by this keeper: the original spec
+   ties re_evaluate_mandate to "if an EventOracle signal exists," and no
+   such oracle contract exists in this 5-contract build (only
+   ReputationRegistry, EscrowAdjudicator, VaultManager, PredictionMarket,
+   CreditLine were built). Wiring a real event source is future work, not
+   something to fake here.
 
    Usage:
      node keeper/cycle.mjs              # one cycle
@@ -29,8 +42,8 @@ const addr = (name) => {
   if (!m) throw new Error(`address for ${name} not found in src/lib/contracts.ts`);
   return m[1];
 };
-const VAULT_MANAGER = addr("VaultManager");
-const ECONOMIC_EVENTS = addr("EconomicEvents");
+const ESCROW_ADJUDICATOR = addr("EscrowAdjudicator");
+const PREDICTION_MARKET = addr("PredictionMarket");
 
 const env = readFileSync("deploy/.env", "utf8");
 for (const line of env.split("\n")) {
@@ -52,17 +65,28 @@ async function read(address, functionName, args = []) {
   return client.readContract({ address, functionName, args });
 }
 
-/** Wait for a tx to reach consensus. Intelligent-contract calls are slow. */
+function isPastDeadline(deadline) {
+  if (!deadline) return true; // no deadline recorded — don't block forever
+  const d = new Date(deadline);
+  if (isNaN(d.getTime())) return true; // unparseable — treat as eligible, don't skip silently
+  return d.getTime() <= Date.now();
+}
+
+/** Waits for a tx to reach consensus and reports the REAL result — a
+ * statusName of ACCEPTED only means consensus was reached, which can
+ * itself be consensus that execution errored. Always check
+ * txExecutionResultName for the real outcome. */
 async function settle(hash, label, tries = 90) {
   for (let i = 0; i < tries; i++) {
     await new Promise((r) => setTimeout(r, 4000));
     let tx;
     try { tx = await client.getTransaction({ hash }); } catch { continue; }
     const status = String(tx?.statusName ?? tx?.status ?? "");
+    const execResult = String(tx?.txExecutionResultName ?? "");
     if (status.includes("ACCEPT") || status.includes("FINAL")) {
-      const vote = tx?.resultName ?? "";
-      log(`    ${label} ${status}${vote ? ` · ${vote}` : ""}`);
-      return { ok: true, tx };
+      const ok = execResult === "FINISHED_WITH_RETURN" || execResult === "" || execResult.includes("SUCCESS");
+      log(`    ${label} ${status} · ${execResult || "no exec result"}`);
+      return { ok, tx };
     }
     if (status.includes("UNDETERMINED") || status.includes("CANCEL")) {
       log(`    ${label} ${status} — no consensus`);
@@ -73,90 +97,92 @@ async function settle(hash, label, tries = 90) {
   return { ok: false };
 }
 
-async function runCycle() {
-  log("── cycle start ──");
-
-  // guard: the keeper must be registered, or the contract will reject it
+async function resolveEscrows() {
+  let escrows = [];
   try {
-    const ok = await read(VAULT_MANAGER, "is_keeper", [account.address]);
-    if (!ok) {
-      log(`keeper ${account.address} is NOT registered — run add_keeper first. Aborting.`);
-      return;
-    }
-  } catch {
-    log("could not verify keeper registration — continuing (older contract?)");
-  }
-
-  // 1. what is the manager reacting to?
-  let context = "";
-  try {
-    const ev = await read(ECONOMIC_EVENTS, "get_active_event", []);
-    if (ev && ev.name) {
-      context = `${ev.name}: ${ev.description} (severity ${ev.severity})`;
-      log(`active event: ${ev.name} · severity ${ev.severity}`);
-    } else {
-      log("no active economic event");
-    }
+    escrows = (await read(ESCROW_ADJUDICATOR, "get_all_escrows", [0, 200])) || [];
   } catch (e) {
-    log("event read failed: " + String(e.message || e).slice(0, 90));
-  }
-
-  // 2. every vault under management
-  let vaults = [];
-  try {
-    vaults = (await read(VAULT_MANAGER, "get_all_vaults", [])) || [];
-  } catch (e) {
-    log("vault read failed: " + String(e.message || e).slice(0, 90));
+    log("escrow read failed: " + String(e.message || e).slice(0, 100));
     return;
   }
-  if (vaults.length === 0) {
-    log("no vaults under management — nothing to do");
+  const eligible = escrows.filter(
+    (e) => (e.status === "evidence_submitted" || e.status === "challenged") && isPastDeadline(e.deadline)
+  );
+  if (eligible.length === 0) {
+    log("no escrows ready to resolve");
     return;
   }
-  log(`${vaults.length} vault(s) under management`);
-
-  // 3. ask each vault's contract to reason and reallocate
-  let done = 0;
-  for (const v of vaults) {
-    const before = `L${v.allocation_lending}/S${v.allocation_staking}/B${v.allocation_builders}/P${v.allocation_predictions}`;
-    log(`  ${v.id} ${v.name} — ${before} · ${v.treasury} cGEN`);
+  log(`${eligible.length} escrow(s) ready to resolve`);
+  for (const e of eligible) {
+    log(`  ${e.id} · deadline ${e.deadline || "(none)"} · status ${e.status}`);
     if (DRY) { log("    (dry run — no write)"); continue; }
-
     try {
       const hash = await client.writeContract({
-        address: VAULT_MANAGER,
-        functionName: "rebalance_vault",
-        args: [v.id, context],
+        address: ESCROW_ADJUDICATOR,
+        functionName: "resolve",
+        args: [e.id],
         value: 0n,
       });
-      log(`    tx ${hash.slice(0, 12)}… reasoning over live market data`);
-      const { ok } = await settle(hash, v.id);
-      if (!ok) continue;
-
-      const after = await read(VAULT_MANAGER, "get_vault", [v.id]);
-      if (after?.id) {
-        const now = `L${after.allocation_lending}/S${after.allocation_staking}/B${after.allocation_builders}/P${after.allocation_predictions}`;
-        log(`    ${before} → ${now}`);
-        if (after.last_rebalance_reason) {
-          log(`    "${String(after.last_rebalance_reason).slice(0, 150)}"`);
-        }
+      log(`    tx ${hash.slice(0, 12)}… adjudicating`);
+      const { ok } = await settle(hash, e.id);
+      if (ok) {
+        const after = await read(ESCROW_ADJUDICATOR, "get_escrow", [e.id]);
+        log(`    outcome: ${after?.outcome} · released ${after?.released_amount}/${after?.amount}`);
       }
-      done++;
-    } catch (e) {
-      log(`    failed: ${String(e.message || e).slice(0, 120)}`);
+    } catch (err) {
+      log(`    failed: ${String(err.message || err).slice(0, 120)}`);
     }
-  }
-
-  try {
-    const cycles = await read(VAULT_MANAGER, "get_cycle_count", []);
-    log(`── cycle end · ${done}/${vaults.length} reallocated · ${cycles} total decisions ──`);
-  } catch {
-    log(`── cycle end · ${done}/${vaults.length} reallocated ──`);
   }
 }
 
+async function resolveMarkets() {
+  let markets = [];
+  try {
+    markets = (await read(PREDICTION_MARKET, "get_all_markets", [0, 200])) || [];
+  } catch (e) {
+    log("market read failed: " + String(e.message || e).slice(0, 100));
+    return;
+  }
+  const eligible = markets.filter(
+    (m) => (m.status === "proposed" || m.status === "challenged") && isPastDeadline(m.deadline)
+  );
+  if (eligible.length === 0) {
+    log("no markets ready to resolve");
+    return;
+  }
+  log(`${eligible.length} market(s) ready to resolve`);
+  for (const m of eligible) {
+    log(`  ${m.id} · deadline ${m.deadline || "(none)"} · status ${m.status}`);
+    if (DRY) { log("    (dry run — no write)"); continue; }
+    try {
+      const hash = await client.writeContract({
+        address: PREDICTION_MARKET,
+        functionName: "resolve",
+        args: [m.id],
+        value: 0n,
+      });
+      log(`    tx ${hash.slice(0, 12)}… adjudicating`);
+      const { ok } = await settle(hash, m.id);
+      if (ok) {
+        const after = await read(PREDICTION_MARKET, "get_market", [m.id]);
+        log(`    outcome: ${after?.outcome}`);
+      }
+    } catch (err) {
+      log(`    failed: ${String(err.message || err).slice(0, 120)}`);
+    }
+  }
+}
+
+async function runCycle() {
+  log("── cycle start ──");
+  await resolveEscrows();
+  await resolveMarkets();
+  log("── cycle end ──");
+}
+
 log(`keeper ${account.address}`);
-log(`VaultManager ${VAULT_MANAGER}`);
+log(`EscrowAdjudicator ${ESCROW_ADJUDICATOR}`);
+log(`PredictionMarket ${PREDICTION_MARKET}`);
 if (DRY) log("DRY RUN — no transactions will be sent");
 
 await runCycle();
