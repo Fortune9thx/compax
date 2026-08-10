@@ -14,7 +14,7 @@ export function AppealStatus({ className }: { className?: string }) {
       <Clock size={13} className="flex-none mt-0.5" />
       <span>
         This outcome was reached by five-validator consensus on GenLayer. GenLayer contracts have a native
-        onchain appeal path — any observer can appeal a transaction while it is still within consensus rounds,
+        onchain appeal path - any observer can appeal a transaction while it is still within consensus rounds,
         triggering re-execution with a different validator set. We don&apos;t have a way to query the exact
         remaining appeal window from the client here, so treat a resolution as provisional until it has been
         settled on Bradbury for a while. See{" "}

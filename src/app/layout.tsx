@@ -21,9 +21,9 @@ const instrumentSerif = Instrument_Serif({
   subsets: ["latin"],
 });
 
-const TITLE = "Compax — The Adjudication Layer for Autonomous Capital";
+const TITLE = "Compax - The Adjudication Layer for Autonomous Capital";
 const DESCRIPTION =
-  "Multi-party capital is locked under natural-language mandates. GenLayer validators evaluate live web evidence and submitted proof, reaching consensus to release, claw back, or reallocate funds — with full reasoning and a native appeal path onchain.";
+  "Multi-party capital is locked under natural-language mandates. GenLayer validators evaluate live web evidence and submitted proof, reaching consensus to release, claw back, or reallocate funds - with full reasoning and a native appeal path onchain.";
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://compax-sepia.vercel.app";
 
 export const metadata: Metadata = {

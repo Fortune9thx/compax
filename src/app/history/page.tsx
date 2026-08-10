@@ -32,7 +32,7 @@ export default function HistoryPage() {
     <AppShell>
       <header className="mb-8">
         <h1 className="compax-serif text-3xl text-text-primary">History</h1>
-        <p className="text-sm text-text-muted mt-1.5">Every mandate, escrow, market, and credit line — across all contracts.</p>
+        <p className="text-sm text-text-muted mt-1.5">Every mandate, escrow, market, and credit line - across all contracts.</p>
       </header>
 
       {loading && rows.length === 0 ? (

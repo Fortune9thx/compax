@@ -3,7 +3,7 @@
 Shared reference patterns for COMPAX v2 contracts.
 
 This file is NOT imported by the other contracts at runtime. Each GenLayer
-intelligent contract deploys as a single self-contained module — there is no
+intelligent contract deploys as a single self-contained module - there is no
 verified multi-file import mechanism on the current GenVM build, and every
 contract in this repo (v1 and v2) declares its own copy of `_Recipient`
 inline for that reason. This file exists purely as the canonical copy other
@@ -47,5 +47,5 @@ def sanitize(s: str, max_len: int = 500) -> str:
 #       .record_escrow_outcome(user_address, success, severity_context)
 #
 # Pilot-tested against Bradbury before EscrowAdjudicator was built to depend
-# on it — see contracts/deploy_order.md for the pilot result and whatever
+# on it - see contracts/deploy_order.md for the pilot result and whatever
 # fallback pattern was actually shipped if this one didn't hold up.

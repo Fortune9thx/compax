@@ -52,7 +52,7 @@ export default function DashboardPage() {
       <header className="mb-8">
         <h1 className="compax-serif text-3xl text-text-primary">Capital under adjudication</h1>
         <p className="text-sm text-text-muted mt-1.5">
-          Every number below is live onchain state from GenLayer Bradbury — nothing here is placeholder data.
+          Every number below is live onchain state from GenLayer Bradbury - nothing here is placeholder data.
         </p>
       </header>
 

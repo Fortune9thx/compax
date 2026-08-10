@@ -27,18 +27,18 @@ class VaultManager(gl.Contract):
     the owner, gated on the mandate having actually approved that instrument
     type for this vault).
 
-    Design note — why move_to_* releases capital to the OWNER instead of
+    Design note - why move_to_* releases capital to the OWNER instead of
     directly funding the target instrument contract in one call: this
     GenVM build's cross-contract WRITE calls
     (gl.get_contract_at(addr).emit(on=...).method(args)) are confirmed
-    broken — the calling contract's tx accepts, the target's state never
+    broken - the calling contract's tx accepts, the target's state never
     changes (see contracts/deploy_order.md). A single atomic
     "vault -> new escrow" call is therefore not reliably achievable. What IS
     proven to work is a plain value transfer with no method call
     (_Recipient(...).emit_transfer(value=...), used throughout this
     contract's withdraw/move_to_*), so move_to_* enforces the mandate
     constraint onchain, decrements the vault's treasury, and releases the
-    real capital to the vault owner's own wallet — who then creates the
+    real capital to the vault owner's own wallet - who then creates the
     actual escrow/market/credit-line themselves as a direct, separate
     transaction, naming themselves as funder/staker/borrower. The mandate
     gate (you cannot release capital toward an instrument type the AI never
@@ -57,7 +57,7 @@ class VaultManager(gl.Contract):
         self.keepers = TreeMap[str, str]()
         self._owner = str(gl.message.sender_address)
 
-    # ── keeper registry — re-evaluation only, never moves funds ────────
+    # ── keeper registry - re-evaluation only, never moves funds ────────
 
     def _only_owner(self) -> None:
         if str(gl.message.sender_address) != self._owner:

@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* ─── COMPAX v2 DESIGN TOKENS — authoritative ────────────────────────────
+/* ─── COMPAX v2 DESIGN TOKENS - authoritative ────────────────────────────
    Dark institutional. Archivo (UI) · JetBrains Mono (data/addresses) ·
    Instrument Serif (display headings only).
 ──────────────────────────────────────────────────────────────────────── */
@@ -86,14 +86,14 @@ body {
   color: white;
 }
 
-/* focus ring — accessible, visible, consistent everywhere */
+/* focus ring - accessible, visible, consistent everywhere */
 :focus-visible {
   outline: 2px solid var(--border-focus);
   outline-offset: 2px;
   border-radius: 4px;
 }
 
-/* scrollbar — subtle, dark */
+/* scrollbar - subtle, dark */
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
@@ -110,7 +110,7 @@ body {
 }
 
 /* ─── shared component-level primitives (kept out of Tailwind utilities
-   deliberately — these are structural, not one-off styling) ───────────── */
+   deliberately - these are structural, not one-off styling) ───────────── */
 
 .compax-card {
   background: var(--bg-secondary);
@@ -135,7 +135,7 @@ body {
   font-family: var(--font-instrument-serif), Georgia, serif;
 }
 
-/* status pill base — color set per-status by component classes below */
+/* status pill base - color set per-status by component classes below */
 .status-pill {
   display: inline-flex;
   align-items: center;
@@ -164,7 +164,7 @@ body {
 .status-danger { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
 .status-deliberating { background: color-mix(in srgb, var(--deliberating) 18%, transparent); color: #b8a4f9; }
 
-/* deliberation pulse — continuous, elegant, not a spinner */
+/* deliberation pulse - continuous, elegant, not a spinner */
 @keyframes deliberate-pulse {
   0%, 100% { opacity: 0.25; transform: scale(0.85); }
   50% { opacity: 1; transform: scale(1); }

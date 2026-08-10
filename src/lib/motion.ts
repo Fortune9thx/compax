@@ -6,7 +6,7 @@ import type { Variants, Transition } from "framer-motion";
 ──────────────────────────────────────────────────────────────────────── */
 
 export const EASE = {
-  /** taste-ease — all entrances & layout moves */
+  /** taste-ease - all entrances & layout moves */
   signature: [0.625, 0.05, 0, 1] as const,
   /** hovers, small UI */
   swift: [0.5, 0, 0.2, 1] as const,
@@ -30,13 +30,13 @@ export const DUR = {
 
 /* ─── SHARED VARIANTS ─── */
 
-/** P2 — stack-reveal container: stagger children 80ms */
+/** P2 - stack-reveal container: stagger children 80ms */
 export const stack: Variants = {
   hidden: {},
   visible: { transition: { staggerChildren: 0.08 } },
 };
 
-/** P2 — stack-reveal item: rise 24px + fade, taste-ease */
+/** P2 - stack-reveal item: rise 24px + fade, taste-ease */
 export const rise: Variants = {
   hidden: { opacity: 0, y: 24 },
   visible: {
@@ -46,7 +46,7 @@ export const rise: Variants = {
   },
 };
 
-/** word-level split reveal (P1) — use inside overflow-hidden span */
+/** word-level split reveal (P1) - use inside overflow-hidden span */
 export const wordUp: Variants = {
   hidden: { y: "110%" },
   visible: (i: number = 0) => ({
@@ -80,7 +80,7 @@ export const stamp: Variants = {
   },
 };
 
-/** in-view helper props — trigger once at 75% viewport */
+/** in-view helper props - trigger once at 75% viewport */
 export const inViewOnce = {
   initial: "hidden" as const,
   whileInView: "visible" as const,

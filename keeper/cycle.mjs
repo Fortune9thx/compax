@@ -1,16 +1,16 @@
-/* ─── Compax v2 keeper — the autonomous adjudication heartbeat ───────────
+/* ─── Compax v2 keeper - the autonomous adjudication heartbeat ───────────
    Reads every open escrow and every proposed/challenged market that's past
    its stated deadline, and asks the relevant contract to resolve() itself.
-   The keeper decides nothing — resolve() still runs the real five-validator
+   The keeper decides nothing - resolve() still runs the real five-validator
    adjudication onchain, fetching its own live web data and reasoning fresh.
    The keeper only decides WHEN to ask, never WHAT the answer is, and never
    touches user funds (no method it calls accepts or moves value).
 
    Deadline enforcement: contracts on this GenVM build have no verified
    wall-clock primitive (every contract in this codebase stores timestamps
-   as "" and ships on tx ordering — see contracts/deploy_order.md). Real
+   as "" and ships on tx ordering - see contracts/deploy_order.md). Real
    date comparison therefore has to happen here, off-chain, where Date.now()
-   is trivially available — not inside the contract, which can't do it
+   is trivially available - not inside the contract, which can't do it
    reliably. If a stored deadline string doesn't parse as a real date, this
    keeper treats the instrument as eligible rather than silently skipping it
    forever.
@@ -66,13 +66,13 @@ async function read(address, functionName, args = []) {
 }
 
 function isPastDeadline(deadline) {
-  if (!deadline) return true; // no deadline recorded — don't block forever
+  if (!deadline) return true; // no deadline recorded - don't block forever
   const d = new Date(deadline);
-  if (isNaN(d.getTime())) return true; // unparseable — treat as eligible, don't skip silently
+  if (isNaN(d.getTime())) return true; // unparseable - treat as eligible, don't skip silently
   return d.getTime() <= Date.now();
 }
 
-/** Waits for a tx to reach consensus and reports the REAL result — a
+/** Waits for a tx to reach consensus and reports the REAL result - a
  * statusName of ACCEPTED only means consensus was reached, which can
  * itself be consensus that execution errored. Always check
  * txExecutionResultName for the real outcome. */
@@ -89,7 +89,7 @@ async function settle(hash, label, tries = 90) {
       return { ok, tx };
     }
     if (status.includes("UNDETERMINED") || status.includes("CANCEL")) {
-      log(`    ${label} ${status} — no consensus`);
+      log(`    ${label} ${status} - no consensus`);
       return { ok: false, tx };
     }
   }
@@ -115,7 +115,7 @@ async function resolveEscrows() {
   log(`${eligible.length} escrow(s) ready to resolve`);
   for (const e of eligible) {
     log(`  ${e.id} · deadline ${e.deadline || "(none)"} · status ${e.status}`);
-    if (DRY) { log("    (dry run — no write)"); continue; }
+    if (DRY) { log("    (dry run - no write)"); continue; }
     try {
       const hash = await client.writeContract({
         address: ESCROW_ADJUDICATOR,
@@ -153,7 +153,7 @@ async function resolveMarkets() {
   log(`${eligible.length} market(s) ready to resolve`);
   for (const m of eligible) {
     log(`  ${m.id} · deadline ${m.deadline || "(none)"} · status ${m.status}`);
-    if (DRY) { log("    (dry run — no write)"); continue; }
+    if (DRY) { log("    (dry run - no write)"); continue; }
     try {
       const hash = await client.writeContract({
         address: PREDICTION_MARKET,
@@ -183,12 +183,12 @@ async function runCycle() {
 log(`keeper ${account.address}`);
 log(`EscrowAdjudicator ${ESCROW_ADJUDICATOR}`);
 log(`PredictionMarket ${PREDICTION_MARKET}`);
-if (DRY) log("DRY RUN — no transactions will be sent");
+if (DRY) log("DRY RUN - no transactions will be sent");
 
 await runCycle();
 
 if (LOOP) {
-  log(`looping every ${INTERVAL_MIN} min — ctrl-c to stop`);
+  log(`looping every ${INTERVAL_MIN} min - ctrl-c to stop`);
   setInterval(runCycle, INTERVAL_MIN * 60_000);
 } else {
   process.exit(0);

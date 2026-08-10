@@ -63,7 +63,7 @@ export default function CreateEscrowPage() {
                 id="provider"
                 value={provider}
                 onChange={(e) => setProvider(e.target.value)}
-                placeholder="0x… — who must deliver and accept this mandate"
+                placeholder="0x… - who must deliver and accept this mandate"
               />
             </div>
 
@@ -73,7 +73,7 @@ export default function CreateEscrowPage() {
                 id="criteria"
                 value={criteria}
                 onChange={(e) => setCriteria(e.target.value)}
-                placeholder="State exactly what must be true for this escrow to release in full — this is what validators will evaluate the evidence against."
+                placeholder="State exactly what must be true for this escrow to release in full - this is what validators will evaluate the evidence against."
                 maxLength={800}
                 charCount={criteria.length}
                 rows={4}

@@ -27,7 +27,7 @@ class EscrowAdjudicator(gl.Contract):
     live data satisfy the original criteria", and pays out full/partial/
     clawback accordingly.
 
-    Reputation is NOT updated inline from here — cross-contract WRITE calls
+    Reputation is NOT updated inline from here - cross-contract WRITE calls
     are confirmed broken on this GenVM build (caller tx accepts, callee state
     never changes; see contracts/deploy_order.md). Instead this contract just
     exposes a clean, honest get_escrow() that ReputationRegistry.
@@ -35,7 +35,7 @@ class EscrowAdjudicator(gl.Contract):
     transaction from a party or a keeper.
 
     "Appeal window": GenLayer's Optimistic Democracy consensus gives every
-    accepted transaction a native appeal window before it finalizes — this is
+    accepted transaction a native appeal window before it finalizes - this is
     a protocol-level property of the transaction itself (ACCEPTED, then an
     appeal window, then FINALIZED), not something this contract implements.
     The frontend surfaces it by polling the resolve() transaction's status.
@@ -153,7 +153,7 @@ class EscrowAdjudicator(gl.Contract):
     @gl.public.write.payable
     def challenge(self, escrow_id: str, reason: str) -> str:
         """Anyone can challenge submitted evidence by posting a bond. A
-        challenge doesn't block resolve() — it's additional context the
+        challenge doesn't block resolve() - it's additional context the
         adjudicating validators weigh, and is refunded/forfeited based on
         whether resolve() agrees the evidence was actually insufficient."""
         escrow_id = _sanitize(escrow_id, 20)
@@ -217,7 +217,7 @@ class EscrowAdjudicator(gl.Contract):
                 challenge_texts.append(f"- {c['challenger']}: {c['reason']}")
         challenges_text = "\n".join(challenge_texts)[:1000] if challenge_texts else "No challenges were raised."
 
-        # Live web data — a general freshness/reachability signal (CoinGecik,
+        # Live web data - a general freshness/reachability signal (CoinGecik,
         # consistent with the rest of this codebase's multi-source pattern),
         # plus a direct fetch of the first evidence URL if one was submitted,
         # since that's the actually-relevant live data for most escrows.
@@ -258,8 +258,8 @@ class EscrowAdjudicator(gl.Contract):
                 f"[LOCKED AMOUNT]\n{amount} cGEN\n"
                 f"[EVIDENCE SUBMITTED BY PROVIDER]\n{evidence_text}\n"
                 f"[CHALLENGES RAISED]\n{challenges_text}\n"
-                f"[LIVE WEB DATA — market freshness check]\n{market_data}\n"
-                f"[LIVE WEB DATA — fetched from submitted evidence URL]\n{evidence_url_data}\n"
+                f"[LIVE WEB DATA - market freshness check]\n{market_data}\n"
+                f"[LIVE WEB DATA - fetched from submitted evidence URL]\n{evidence_url_data}\n"
                 f"[TASK]\nDecide the outcome: \"full_release\" (criteria fully met, "
                 f"pay the provider the full amount), \"partial\" (criteria partly "
                 f"met, pay the provider a fair fraction of the amount), or "

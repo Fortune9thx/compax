@@ -29,7 +29,7 @@ export default function CreditPage() {
         <div>
           <h1 className="compax-serif text-3xl text-text-primary">Collateralized credit</h1>
           <p className="text-sm text-text-muted mt-1.5">
-            Post collateral, get AI-reasoned terms. Any lender funds the line directly — no platform pool.
+            Post collateral, get AI-reasoned terms. Any lender funds the line directly - no platform pool.
           </p>
         </div>
         <Link href="/credit/create">
@@ -155,7 +155,7 @@ function CreditLineModal({ lineId, onClose, onChanged }: { lineId: string; onClo
 
         {l.status === "funded" && isLender && (
           <div className="space-y-2 pt-2 border-t border-border">
-            <Textarea value={defaultEvidence} onChange={(e) => setDefaultEvidence(e.target.value)} placeholder="Claim default — evidence the borrower is in default." rows={2} maxLength={600} charCount={defaultEvidence.length} />
+            <Textarea value={defaultEvidence} onChange={(e) => setDefaultEvidence(e.target.value)} placeholder="Claim default - evidence the borrower is in default." rows={2} maxLength={600} charCount={defaultEvidence.length} />
             <Button variant="danger" className="w-full" onClick={doClaimDefault} disabled={!defaultEvidence.trim() || state.phase === "deliberating"}>Claim default</Button>
           </div>
         )}

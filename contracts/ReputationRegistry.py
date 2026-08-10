@@ -14,7 +14,7 @@ class ReputationRegistry(gl.Contract):
     """
     PULL-based reputation. Cross-contract WRITE calls (gl.get_contract_at(addr)
     .emit(on=...).method(args)) were pilot-tested on Bradbury and confirmed to
-    silently no-op — the caller's tx accepts, the callee's state never changes.
+    silently no-op - the caller's tx accepts, the callee's state never changes.
     Cross-contract READS (gl.get_contract_at(addr).view().method(args)) were
     separately pilot-tested and confirmed to work correctly.
 
@@ -27,7 +27,7 @@ class ReputationRegistry(gl.Contract):
     verifies it's actually resolved, and only then applies a reasoned delta.
 
     Security: `trusted_sources` restricts which contract addresses this
-    registry will trust the *shape and finality* of state from — without it,
+    registry will trust the *shape and finality* of state from - without it,
     anyone could deploy a fake contract mimicking get_escrow()'s return shape
     with status="resolved" to fabricate reputation. Only the owner registers
     trusted sources, after deploying and verifying the real adjudicator
@@ -148,7 +148,7 @@ class ReputationRegistry(gl.Contract):
                 f"Outcome: {outcome}\n"
                 f"Context: {ctx}\n"
                 f"[TASK]\nAssign a reputation delta as an integer between {lo} and {hi} "
-                f"that reflects the severity of this specific outcome — a clean, prompt "
+                f"that reflects the severity of this specific outcome - a clean, prompt "
                 f"fulfillment deserves more than a barely-adequate one; a clear, "
                 f"malicious-looking default deserves a harsher penalty than a "
                 f"borderline dispute.\n"
@@ -313,7 +313,7 @@ class ReputationRegistry(gl.Contract):
         if status == "repaid":
             delta, reason = self._reasoned_delta("credit", "credit obligation fully repaid", context, 10, 80, 35)
         elif collateral_amount > 0 and collateral_to_borrower >= collateral_amount:
-            # adjudicated fully in the borrower's favor — treat like a clean resolution, not a penalty
+            # adjudicated fully in the borrower's favor - treat like a clean resolution, not a penalty
             delta, reason = self._reasoned_delta("credit", "contested default adjudicated in borrower's favor", context, -10, 30, 5)
         else:
             delta, reason = self._reasoned_delta("credit", "contested default adjudicated against borrower, collateral claimed", context, -200, -20, -100)

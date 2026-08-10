@@ -25,15 +25,14 @@ class PredictionMarket(gl.Contract):
     an outcome with evidence; anyone can challenge that proposal with a
     bond; resolve() then has five validators independently evaluate the
     proposal, any challenges, and live web data against the original
-    question — the creator cannot unilaterally resolve their own market.
+    question - the creator cannot unilaterally resolve their own market.
     Winners individually claim their stake plus a proportional share of the
     losing pool after finality.
 
     Note on "after resolution date": this GenVM build has no contract-level
     wall-clock primitive verified anywhere in this codebase (every contract
     here stores timestamps as "" and ships on tx ordering instead). So
-    propose_outcome is not gated on the deadline having actually passed —
-    that's enforced as a UI/process convention, not an onchain guarantee.
+    propose_outcome is not gated on the deadline having actually passed - that's enforced as a UI/process convention, not an onchain guarantee.
     Documenting this honestly rather than faking a check that doesn't work.
     """
 
@@ -182,8 +181,7 @@ class PredictionMarket(gl.Contract):
     @gl.public.write
     def resolve(self, market_id: str) -> str:
         """Five validators independently determine the real outcome from the
-        original question, the proposal, any challenges, and live web data —
-        not a rubber stamp of whatever was proposed. The market's creator
+        original question, the proposal, any challenges, and live web data - not a rubber stamp of whatever was proposed. The market's creator
         cannot call this in a way that favors themselves; the outcome is
         reasoned fresh from the question every time."""
         market_id = _sanitize(market_id, 20)
@@ -221,16 +219,16 @@ class PredictionMarket(gl.Contract):
         result_str = gl.eq_principle.prompt_non_comparative(
             lambda: (
                 f"You are independently resolving a binary prediction market on "
-                f"COMPAX. Do not simply accept the proposed outcome — determine "
+                f"COMPAX. Do not simply accept the proposed outcome - determine "
                 f"the real answer to the question yourself using your knowledge "
                 f"and the live data provided, then weigh the proposal and any "
                 f"challenges against that independent determination.\n"
                 f"[QUESTION]\n{question}\n"
                 f"[PREFERRED RESOLUTION SOURCES]\n{sources}\n"
-                f"[PROPOSED OUTCOME]\n{proposed} — evidence: {proposed_evidence}\n"
+                f"[PROPOSED OUTCOME]\n{proposed} - evidence: {proposed_evidence}\n"
                 f"[CHALLENGES RAISED]\n{challenges_text}\n"
                 f"[STAKES]\nYES: {total_yes} cGEN | NO: {total_no} cGEN\n"
-                f"[LIVE MARKET DATA — CoinGecko]\n{market_context}\n"
+                f"[LIVE MARKET DATA - CoinGecko]\n{market_context}\n"
                 f"[TASK]\nDetermine the real outcome: \"yes\" or \"no\". This may "
                 f"or may not match the proposal.\n"
                 f"Return ONLY valid JSON with no extra text: "

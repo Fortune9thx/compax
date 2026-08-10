@@ -33,7 +33,7 @@ const DEFAULT: WalletState = {
   provider: null,
 };
 
-// Singleton wallet state — shared across all hook instances (exported for useContractWrite)
+// Singleton wallet state - shared across all hook instances (exported for useContractWrite)
 export let _state: WalletState = DEFAULT;
 const _listeners = new Set<() => void>();
 
@@ -47,7 +47,7 @@ function setState(patch: Partial<WalletState>) {
 }
 
 // Event listeners are attached to whichever provider the user actually picked,
-// not blindly to window.ethereum — otherwise a second injected wallet's events
+// not blindly to window.ethereum - otherwise a second injected wallet's events
 // never reach the app.
 let _listenerCleanup: (() => void) | null = null;
 
@@ -119,7 +119,7 @@ async function tryRestoreSession(wallets: DiscoveredWallet[]) {
       provider: match.provider,
     });
   } catch {
-    // silent — user will just see "Connect wallet"
+    // silent - user will just see "Connect wallet"
   }
 }
 

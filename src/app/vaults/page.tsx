@@ -35,7 +35,7 @@ export default function VaultsPage() {
       ) : sorted.length === 0 ? (
         <EmptyState
           title="No vaults yet"
-          description="Create a vault and state your objective — an intelligent contract will reason which instruments it permits."
+          description="Create a vault and state your objective - an intelligent contract will reason which instruments it permits."
           action={<Link href="/vaults/create"><Button size="sm">Create a vault</Button></Link>}
         />
       ) : (

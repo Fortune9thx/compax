@@ -2,7 +2,7 @@ import { createClient } from "genlayer-js";
 import { testnetBradbury } from "genlayer-js/chains";
 import { TransactionStatus, CalldataEncodable } from "genlayer-js/types";
 
-// ─── Read client — shared singleton, no wallet needed ───
+// ─── Read client - shared singleton, no wallet needed ───
 const _readClient = createClient({ chain: testnetBradbury });
 
 export async function readContract<T = unknown>(
@@ -17,7 +17,7 @@ export async function readContract<T = unknown>(
   }) as Promise<T>;
 }
 
-// ─── Provider hardening (from OSSure — Bradbury production pattern) ───
+// ─── Provider hardening (from OSSure - Bradbury production pattern) ───
 // Non-MetaMask wallets reject MetaMask Snap probe methods and abort transactions.
 // We intercept those probes and return empty objects so signing continues cleanly.
 const SNAP_PROBE_METHODS = new Set([
@@ -44,7 +44,7 @@ function hardenProvider(provider: unknown): unknown {
   });
 }
 
-// ─── Write client — MetaMask signs via EIP-1193 provider (Bradbury pattern) ───
+// ─── Write client - MetaMask signs via EIP-1193 provider (Bradbury pattern) ───
 async function getWriteClient(provider: unknown, address: string) {
   const client = createClient({
     chain: testnetBradbury,

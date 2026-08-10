@@ -24,7 +24,7 @@ class CreditLine(gl.Contract):
     purpose in natural language; an intelligent contract reasons the maximum
     loan-to-value and interest rate the collateral actually supports. Any
     lender can then fund the line with their own capital, which is
-    immediately disbursed to the borrower — this is a genuine two-sided
+    immediately disbursed to the borrower - this is a genuine two-sided
     market, not a pool the platform has to seed itself, unlike a
     single-sided lending pool with no funding source.
 
@@ -77,7 +77,7 @@ class CreditLine(gl.Contract):
                 f"[COLLATERAL]\n{collateral} cGEN\n"
                 f"[LIVE MARKET CONTEXT]\n{market_data}\n"
                 f"[TASK]\nDecide the maximum loan amount this collateral "
-                f"supports (an over-collateralized loan — typically 40-80% of "
+                f"supports (an over-collateralized loan - typically 40-80% of "
                 f"the collateral value depending on how risky the stated "
                 f"purpose and current market conditions are) and an interest "
                 f"rate.\n"
@@ -129,7 +129,7 @@ class CreditLine(gl.Contract):
     @gl.public.write.payable
     def fund_line(self, line_id: str) -> str:
         """Any lender funds the line with their own capital (gl.message.value,
-        must not exceed the AI-set max_loan_amount) — disbursed to the
+        must not exceed the AI-set max_loan_amount) - disbursed to the
         borrower immediately."""
         line_id = _sanitize(line_id, 20)
         if line_id not in self.lines:
@@ -232,7 +232,7 @@ class CreditLine(gl.Contract):
     def resolve_default(self, line_id: str) -> str:
         """Five validators weigh the lender's default evidence, any borrower
         rebuttal, and live market context to decide how the collateral
-        actually splits — not a rigid all-or-nothing liquidation."""
+        actually splits - not a rigid all-or-nothing liquidation."""
         line_id = _sanitize(line_id, 20)
         if line_id not in self.lines:
             raise gl.vm.UserError("line_not_found")

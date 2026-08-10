@@ -47,7 +47,7 @@ export function DegradedBanner() {
   return (
     <div className="flex items-center gap-2.5 rounded-lg border border-warning/25 bg-warning/8 px-4 py-2.5 text-xs text-warning mb-6">
       <WifiOff size={14} className="flex-none" />
-      <span>Bradbury reads are syncing — some data may be stale. Writes still work normally.</span>
+      <span>Bradbury reads are syncing - some data may be stale. Writes still work normally.</span>
     </div>
   );
 }

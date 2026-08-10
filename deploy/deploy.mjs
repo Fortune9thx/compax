@@ -1,11 +1,10 @@
-// Compax v2 deployment script — Bradbury testnet
+// Compax v2 deployment script - Bradbury testnet
 // Usage: ACCOUNT_PRIVATE_KEY=0x... node deploy/deploy.mjs
 // Or:    create deploy/.env with ACCOUNT_PRIVATE_KEY=0x...
 //
 // All 5 contracts are independent (no constructor args, no cross-calls at
 // deploy time). After deploying, register the adjudicator contracts as
-// trusted sources on ReputationRegistry (see the block at the bottom) —
-// without that, record_from_escrow/record_from_prediction/record_from_credit
+// trusted sources on ReputationRegistry (see the block at the bottom) - // without that, record_from_escrow/record_from_prediction/record_from_credit
 // will reject every claim.
 
 import { readFileSync, writeFileSync } from "fs";
@@ -77,7 +76,7 @@ async function verifyContract(name, address) {
       await client.readContract({ address, functionName: "get_score", args: [account.address] });
     } else {
       const result = await client.readContract({ address, functionName: method, args: [] });
-      console.error(`[${name}] ✓ readable — ${method} => ${result}`);
+      console.error(`[${name}] ✓ readable - ${method} => ${result}`);
       return true;
     }
     console.error(`[${name}] ✓ readable`);
@@ -103,7 +102,7 @@ for (const [name, filePath] of Object.entries(contracts)) {
     addresses[name] = addr;
     await verifyContract(name, addr);
   } catch (e) {
-    console.error(`FAILED: ${name} — ${e.message}`);
+    console.error(`FAILED: ${name} - ${e.message}`);
     addresses[name] = "FAILED";
   }
 }
@@ -151,5 +150,5 @@ if (addresses.ReputationRegistry !== "FAILED") {
       console.error(`  FAILED to register ${contractName}: ${e.message}`);
     }
   }
-  console.error("Done. Verify with is_trusted_source(address, category) before relying on it — registration has propagation lag on Bradbury.");
+  console.error("Done. Verify with is_trusted_source(address, category) before relying on it - registration has propagation lag on Bradbury.");
 }

@@ -81,7 +81,7 @@ export default function CreateVaultPage() {
         <div>
           <div className="flex items-center justify-between mb-2">
             <Label className="mb-0">Risk tolerance</Label>
-            <span className="compax-mono text-xs text-text-secondary">{risk}/10 — {RISK_LABELS[risk]}</span>
+            <span className="compax-mono text-xs text-text-secondary">{risk}/10 - {RISK_LABELS[risk]}</span>
           </div>
           <Slider value={risk} onValueChange={setRisk} />
         </div>
@@ -94,7 +94,7 @@ export default function CreateVaultPage() {
         <div className="rounded-lg border border-border bg-bg-primary/40 p-4 text-xs">
           <p className="compax-mono text-[10px] uppercase tracking-wider text-text-muted mb-2">What the AI will decide</p>
           <p className="text-text-secondary leading-relaxed">
-            Which instrument types — escrow, prediction, credit — this vault&apos;s mandate permits, reasoned from
+            Which instrument types - escrow, prediction, credit - this vault&apos;s mandate permits, reasoned from
             your objective and risk tolerance. Capital can only ever leave this vault toward an instrument type the
             mandate has approved.
           </p>

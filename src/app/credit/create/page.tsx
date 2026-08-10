@@ -61,7 +61,7 @@ export default function CreateCreditLinePage() {
         <div>
           <Label htmlFor="collateral">Collateral to post (cGEN)</Label>
           <Input id="collateral" type="number" min={1} value={collateral} onChange={(e) => setCollateral(e.target.value)} placeholder="10000" />
-          <FieldHint>The AI sets a maximum loan-to-value and interest rate this collateral supports — always over-collateralized.</FieldHint>
+          <FieldHint>The AI sets a maximum loan-to-value and interest rate this collateral supports - always over-collateralized.</FieldHint>
         </div>
 
         <Button className="w-full" disabled={!canSubmit || state.phase === "deliberating" || state.phase === "submitting"} onClick={submit}>

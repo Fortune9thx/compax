@@ -142,7 +142,7 @@ export default function MarketDetailPage() {
           {market.status === "active" && (
             <Card>
               <CardLabel>Propose outcome</CardLabel>
-              <p className="text-xs text-text-muted mt-2 mb-3">Anyone can propose — this opens a challenge window before resolution.</p>
+              <p className="text-xs text-text-muted mt-2 mb-3">Anyone can propose - this opens a challenge window before resolution.</p>
               <div className="flex gap-2 mb-3">
                 <Button size="sm" variant={proposedOutcome === "yes" ? "primary" : "secondary"} onClick={() => setProposedOutcome("yes")}>YES</Button>
                 <Button size="sm" variant={proposedOutcome === "no" ? "primary" : "secondary"} onClick={() => setProposedOutcome("no")}>NO</Button>
@@ -172,7 +172,7 @@ export default function MarketDetailPage() {
               </Card>
               <Card>
                 <CardLabel>Resolve</CardLabel>
-                <p className="text-xs text-text-muted mt-2 mb-3">Five validators independently determine the real outcome — not a rubber stamp of the proposal.</p>
+                <p className="text-xs text-text-muted mt-2 mb-3">Five validators independently determine the real outcome - not a rubber stamp of the proposal.</p>
                 <Button className="w-full" onClick={doResolve} disabled={state.phase === "deliberating"}>Resolve</Button>
               </Card>
             </>
@@ -186,12 +186,12 @@ export default function MarketDetailPage() {
               ) : myStake.position === market.outcome ? (
                 <>
                   <p className="text-xs text-text-secondary mt-2 mb-3">
-                    You staked {myStake.position.toUpperCase()} — winning side. Claim your stake plus a proportional share of the losing pool.
+                    You staked {myStake.position.toUpperCase()} - winning side. Claim your stake plus a proportional share of the losing pool.
                   </p>
                   <Button onClick={doClaim} disabled={state.phase === "deliberating"}>Claim winnings</Button>
                 </>
               ) : (
-                <p className="text-xs text-text-muted mt-2">You staked {myStake.position.toUpperCase()} — resolved {market.outcome?.toUpperCase()}. Nothing to claim.</p>
+                <p className="text-xs text-text-muted mt-2">You staked {myStake.position.toUpperCase()} - resolved {market.outcome?.toUpperCase()}. Nothing to claim.</p>
               )}
             </Card>
           )}

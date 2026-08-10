@@ -111,7 +111,7 @@ export default function EscrowDetailPage() {
                     reasoning: escrow.ai_reasoning,
                     evidenceSnapshot: escrow.evidence_snapshot,
                     webDataSnapshot: escrow.web_data_snapshot,
-                    outcomeLabel: `${escrow.outcome} — ${escrow.released_amount.toLocaleString()} of ${escrow.amount.toLocaleString()} cGEN released`,
+                    outcomeLabel: `${escrow.outcome} - ${escrow.released_amount.toLocaleString()} of ${escrow.amount.toLocaleString()} cGEN released`,
                   }
                 : undefined
             }
@@ -179,7 +179,7 @@ export default function EscrowDetailPage() {
           {(escrow.status === "evidence_submitted" || escrow.status === "challenged") && (
             <Card>
               <CardLabel>Challenge this evidence</CardLabel>
-              <p className="text-xs text-text-secondary mt-2 mb-3">Anyone can challenge with a bond — validators weigh it at resolution.</p>
+              <p className="text-xs text-text-secondary mt-2 mb-3">Anyone can challenge with a bond - validators weigh it at resolution.</p>
               <div className="space-y-3">
                 <Textarea
                   value={challengeReason}

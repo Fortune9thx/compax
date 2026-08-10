@@ -50,13 +50,13 @@ export default function ReputationPage() {
     <AppShell>
       <header className="mb-8">
         <h1 className="compax-serif text-3xl text-text-primary">Reputation passport</h1>
-        <p className="text-sm text-text-muted mt-1.5">Score is only ever updated by adjudicated outcomes — fully disputable, never self-reported.</p>
+        <p className="text-sm text-text-muted mt-1.5">Score is only ever updated by adjudicated outcomes - fully disputable, never self-reported.</p>
       </header>
 
       <Input
         value={viewAddress}
         onChange={(e) => setViewAddress(e.target.value)}
-        placeholder="0x… — view any address's reputation"
+        placeholder="0x… - view any address's reputation"
         className="max-w-md mb-8"
       />
 

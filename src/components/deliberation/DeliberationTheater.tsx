@@ -120,7 +120,7 @@ export function DeliberationTheater({
         <div className="px-4 pb-3 flex items-center gap-1.5 text-[11px] text-text-muted border-t border-border/60 pt-2.5">
           <Clock size={11} className="flex-none" />
           <span>
-            Accepted by five-validator consensus. GenLayer&apos;s native appeal window is open — the
+            Accepted by five-validator consensus. GenLayer&apos;s native appeal window is open - the
             outcome above can still be challenged onchain before it finalizes.
           </span>
         </div>
