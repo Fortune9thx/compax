@@ -11,6 +11,13 @@ const BRADBURY_CHAIN = {
   blockExplorerUrls: ["https://explorer-bradbury.genlayer.com/"],
 };
 
+// Wallets are inconsistent about hex-string casing in eth_chainId responses
+// (MetaMask returns lowercase, e.g. "0x107d") - never compare chainId with
+// raw === against BRADBURY_CHAIN.chainId, always go through this.
+function isBradbury(chainId: string | null | undefined): boolean {
+  return !!chainId && chainId.toLowerCase() === BRADBURY_CHAIN.chainId.toLowerCase();
+}
+
 export type WalletState = {
   address: string | null;
   connected: boolean;
@@ -65,7 +72,7 @@ function attachProviderListeners(provider: EIP1193Provider) {
 
   const onChainChanged = (chainId: unknown) => {
     const id = chainId as string;
-    setState({ chainId: id, onBradbury: id === BRADBURY_CHAIN.chainId });
+    setState({ chainId: id, onBradbury: isBradbury(id) });
   };
 
   provider.on("accountsChanged", onAccountsChanged);
@@ -114,7 +121,7 @@ async function tryRestoreSession(wallets: DiscoveredWallet[]) {
       address: accounts[0],
       connected: true,
       chainId,
-      onBradbury: chainId === BRADBURY_CHAIN.chainId,
+      onBradbury: isBradbury(chainId),
       walletName: match.name,
       provider: match.provider,
     });
@@ -171,7 +178,7 @@ export function useWallet() {
         connected: true,
         connecting: false,
         chainId,
-        onBradbury: chainId === BRADBURY_CHAIN.chainId,
+        onBradbury: isBradbury(chainId),
         walletName: chosen.name,
         provider: chosen.provider,
         error: null,
@@ -196,7 +203,7 @@ export function useWallet() {
     try {
       await switchToBradbury(_state.provider);
       const chainId = (await _state.provider.request({ method: "eth_chainId" })) as string;
-      setState({ chainId, onBradbury: chainId === BRADBURY_CHAIN.chainId });
+      setState({ chainId, onBradbury: isBradbury(chainId) });
     } catch (e) {
       setState({ error: e instanceof Error ? e.message : "Failed to switch network" });
     }
