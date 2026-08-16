@@ -52,6 +52,22 @@ export function DegradedBanner() {
   );
 }
 
+export function WrongNetworkBanner({ onSwitch }: { onSwitch?: () => void }) {
+  return (
+    <div className="flex items-center gap-2.5 rounded-lg border border-danger/25 bg-danger/8 px-4 py-2.5 text-xs text-danger mb-6">
+      <AlertTriangle size={14} className="flex-none" />
+      <span className="flex-1">
+        Your wallet is connected to the wrong network. Compax only works on GenLayer Bradbury Testnet (chainId 4221) - switch networks before submitting any transaction.
+      </span>
+      {onSwitch && (
+        <Button size="sm" variant="ghost" onClick={onSwitch} className="text-danger hover:bg-danger/15 flex-none">
+          Switch network
+        </Button>
+      )}
+    </div>
+  );
+}
+
 export function CardSkeleton({ className }: { className?: string }) {
   return (
     <div className={cn("compax-card p-5 animate-pulse", className)}>

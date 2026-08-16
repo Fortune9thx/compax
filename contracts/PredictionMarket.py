@@ -254,11 +254,45 @@ class PredictionMarket(gl.Contract):
             outcome = "no"
             reasoning = "Unable to parse adjudication result; defaulting to NO."
 
+        # Challenge bonds must resolve too - collected in challenge_proposal()
+        # as real value, they cannot sit in the contract forever with no
+        # code path out. A challenge that turned out to be right (the
+        # resolved outcome differs from what was proposed) is refunded
+        # directly to the challenger. A challenge against a proposal the
+        # validators independently confirmed is forfeited into the winning
+        # stake pool, increasing every correct staker's proportional payout
+        # in claim_winnings() - the contract already holds this GEN, so this
+        # is purely a state update, not a new transfer.
+        challenge_vindicated = outcome != proposed
+        refund_payouts: list = []
+        forfeited_total = 0
+        for i in range(challenge_count):
+            key = f"{market_id}_{i}"
+            if key not in self.challenges:
+                continue
+            c = json.loads(self.challenges[key])
+            bond = int(c["bond"])
+            if challenge_vindicated:
+                refund_payouts.append((c["challenger"], bond))
+            else:
+                forfeited_total += bond
+
+        if forfeited_total > 0:
+            if outcome == "yes":
+                m["total_yes"] = m["total_yes"] + forfeited_total
+            else:
+                m["total_no"] = m["total_no"] + forfeited_total
+
         m["status"] = "resolved"
         m["outcome"] = outcome
         m["resolution_reasoning"] = reasoning
         m["web_data_snapshot"] = market_context[:300]
         self.markets[market_id] = json.dumps(m)
+
+        for recipient, bond in refund_payouts:
+            if bond > 0:
+                _Recipient(Address(recipient)).emit_transfer(value=u256(bond))
+
         return outcome
 
     @gl.public.write

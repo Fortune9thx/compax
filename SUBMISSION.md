@@ -19,15 +19,21 @@ Multi-party capital is locked under natural-language mandates. GenLayer validato
 
 Every capital-moving decision in this app requires judgment over real-world web data or contested evidence, and uses `gl.eq_principle.prompt_non_comparative` (LLM reasoning, five-validator consensus) grounded in live data from `gl.eq_principle.strict_eq` + `gl.nondet.web.get`. None of it is deterministic portfolio rebalancing, and no capital moves through a centralized pool the platform funds itself.
 
-## Deployed contracts (Bradbury, deployed 2026-07-31)
+## Deployed contracts (Bradbury)
 
 | Contract | Address | Deploy tx |
 |---|---|---|
 | ReputationRegistry *(redeployed 2026-08-10)* | `0x959F078FC466AB57204BBB8F0Cf04CE08C074EaD` | `0xa0697aaf2a994bb37dfc1479ad3aea6d2127b0a6d2889e7028a21292b7010122` |
-| EscrowAdjudicator *(hero)* | `0x44d0efE9E1d8529f4295C8EBE7c6426F7e1493EC` | `0x9d57fbe7ad05c7edeb0c76db8cc3a4673bcf9e4d22e77effd7859e018dc152bb` |
+| EscrowAdjudicator *(hero, redeployed 2026-08-16)* | `0xcC2F11Aa3971195BBBA9696CDe6283aa54a196cE` | `0xfd3dbd037461ff7cc33f94d1a70f4af867d1d5d07f833bdf8fb90f8ce04a5269` |
 | VaultManager | `0x0815b09F89C97807c50e9fB2aa2744E21C895122` | `0x49bec0d2f35d52389c2bb609063d0ea7d2b1213e95f8fbbde6046db76b4c5a63` |
-| PredictionMarket | `0x040CAb1ae474C6d775367734D13c903992b1806B` | `0xdaa0e3bbb3ed2c6afb9343c6ece63d0aff5dedc8f36332d36848e19d5e273dd6` |
+| PredictionMarket *(redeployed 2026-08-16)* | `0xc45693a4404737039A1A69b338Bef0083752dcb7` | `0xcc6e97ffbe463a73b74d4024eb5966256c5c5c85c3cbcafe045ed9e01ac3a156` |
 | CreditLine | `0xC04F7900840a8088909b906bD429A4a834715Ca5` | `0x52a92d8a87514891bdfa8cd8903e8fa1a909f54a5c95a2cc4257a901f52a7146` |
+
+EscrowAdjudicator and PredictionMarket were redeployed on 2026-08-16 to fix a
+serious bug: `challenge()`/`challenge_proposal()` collected a real, payable
+bond with no code path that ever paid it back out. See [SECURITY.md](SECURITY.md#fixed-since-last-review-2026-08-16)
+for the full disclosure, including that bonds sent to the previous addresses
+during earlier testing are permanently unrecoverable.
 
 All 5 are independent - none take constructor arguments, none call each other automatically. Source: [`contracts/`](contracts/), single source of truth for addresses: [`src/lib/contracts.ts`](src/lib/contracts.ts).
 

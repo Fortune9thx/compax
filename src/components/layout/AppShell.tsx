@@ -17,7 +17,7 @@ import { useWallet } from "@/hooks/useWallet";
 import { useReputationScore } from "@/hooks/useContract";
 import { NETWORK } from "@/lib/contracts";
 import { cn } from "@/lib/utils";
-import { DegradedBanner } from "@/components/ui/States";
+import { DegradedBanner, WrongNetworkBanner } from "@/components/ui/States";
 
 const NAV = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -136,6 +136,7 @@ function WalletControl() {
 
 export function AppShell({ children, degraded }: { children: React.ReactNode; degraded?: boolean }) {
   const pathname = usePathname();
+  const { connected, onBradbury, switchNetwork } = useWallet();
 
   return (
     <div className="min-h-screen flex flex-col md:flex-row">
@@ -185,6 +186,7 @@ export function AppShell({ children, degraded }: { children: React.ReactNode; de
         </header>
 
         <main className="flex-1 px-4 md:px-8 py-6 md:py-8 max-w-[1280px] w-full mx-auto page-enter pb-24 md:pb-8">
+          {connected && !onBradbury && <WrongNetworkBanner onSwitch={switchNetwork} />}
           {degraded && <DegradedBanner />}
           {children}
         </main>

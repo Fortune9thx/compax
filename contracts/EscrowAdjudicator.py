@@ -201,6 +201,7 @@ class EscrowAdjudicator(gl.Contract):
         evidence = e["evidence"]
         funder = e["funder"]
         provider = e["provider"]
+        required_evidence_types = e.get("required_evidence_types") or "not specified by the funder"
 
         evidence_text = "\n".join(
             f"- Submitted by {ev['submitter']}: {ev['text']}"
@@ -255,6 +256,7 @@ class EscrowAdjudicator(gl.Contract):
                 f"whether the submitted evidence, together with any live web data, "
                 f"satisfies the funder's original natural-language success criteria.\n"
                 f"[SUCCESS CRITERIA]\n{criteria}\n"
+                f"[EVIDENCE TYPES THE FUNDER REQUIRED]\n{required_evidence_types}\n"
                 f"[LOCKED AMOUNT]\n{amount} cGEN\n"
                 f"[EVIDENCE SUBMITTED BY PROVIDER]\n{evidence_text}\n"
                 f"[CHALLENGES RAISED]\n{challenges_text}\n"
@@ -264,8 +266,11 @@ class EscrowAdjudicator(gl.Contract):
                 f"pay the provider the full amount), \"partial\" (criteria partly "
                 f"met, pay the provider a fair fraction of the amount), or "
                 f"\"clawback\" (criteria not met, return the full amount to the "
-                f"funder). If challenges raise credible, unaddressed doubts about "
-                f"the evidence, weigh that toward partial or clawback.\n"
+                f"funder). If the funder specified required evidence types and the "
+                f"provider's submission doesn't match them, weigh that toward "
+                f"partial or clawback. If challenges raise credible, unaddressed "
+                f"doubts about the evidence, weigh that toward partial or "
+                f"clawback.\n"
                 f"Return ONLY valid JSON with no extra text: "
                 f'{{\"outcome\": \"full_release\"|\"partial\"|\"clawback\", '
                 f'\"released_amount\": <int 0 to {amount}>, '
@@ -298,6 +303,30 @@ class EscrowAdjudicator(gl.Contract):
             released = 0
             reasoning = "Unable to parse adjudication result; defaulting to clawback to protect funder capital."
 
+        # Challenge bonds must resolve too - collected in challenge() as real
+        # value, they cannot sit in the contract forever with no code path
+        # out. A challenge that raised doubt validated by the outcome
+        # (partial/clawback) is refunded to the challenger; a challenge
+        # against evidence the validators deemed fully sufficient is
+        # forfeited to the provider as compensation for a meritless dispute.
+        provider_bond = int(e.get("provider_bond", 0))
+        bond_payouts: list = []
+        for i in range(challenge_count):
+            key = f"{escrow_id}_{i}"
+            if key not in self.challenges:
+                continue
+            c = json.loads(self.challenges[key])
+            if c.get("refunded"):
+                continue
+            challenge_bond = int(c["bond"])
+            if outcome == "full_release":
+                c["refunded"] = False
+                bond_payouts.append((provider, challenge_bond))
+            else:
+                c["refunded"] = True
+                bond_payouts.append((c["challenger"], challenge_bond))
+            self.challenges[key] = json.dumps(c)
+
         # CEI: record state before external transfers
         e["status"] = "resolved"
         e["outcome"] = outcome
@@ -308,10 +337,15 @@ class EscrowAdjudicator(gl.Contract):
         self.escrows[escrow_id] = json.dumps(e)
 
         refund = amount - released
-        if released > 0:
-            _Recipient(Address(provider)).emit_transfer(value=u256(released))
-        if refund > 0:
-            _Recipient(Address(funder)).emit_transfer(value=u256(refund))
+        provider_payout = released + (provider_bond if outcome != "clawback" else 0)
+        funder_payout = refund + (provider_bond if outcome == "clawback" else 0)
+        if provider_payout > 0:
+            _Recipient(Address(provider)).emit_transfer(value=u256(provider_payout))
+        if funder_payout > 0:
+            _Recipient(Address(funder)).emit_transfer(value=u256(funder_payout))
+        for recipient, bond_amount in bond_payouts:
+            if bond_amount > 0:
+                _Recipient(Address(recipient)).emit_transfer(value=u256(bond_amount))
 
         return outcome
 

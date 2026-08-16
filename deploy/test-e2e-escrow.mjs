@@ -21,7 +21,7 @@ try {
 const OWNER_KEY = process.env.ACCOUNT_PRIVATE_KEY;
 if (!OWNER_KEY) { console.error("ERROR: set ACCOUNT_PRIVATE_KEY in deploy/.env"); process.exit(1); }
 
-const ESCROW_ADDRESS = "0x44d0efE9E1d8529f4295C8EBE7c6426F7e1493EC";
+const ESCROW_ADDRESS = "0xcC2F11Aa3971195BBBA9696CDe6283aa54a196cE";
 const REPUTATION_ADDRESS = "0x959F078FC466AB57204BBB8F0Cf04CE08C074EaD";
 
 function assert(cond, msg) {

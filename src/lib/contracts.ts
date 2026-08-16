@@ -20,9 +20,16 @@ export const CONTRACTS = {
   // status "resolved" - meaning reputation could never be claimed on a
   // contested-default credit line. See contracts/ReputationRegistry.py.
   ReputationRegistry: "0x959F078FC466AB57204BBB8F0Cf04CE08C074EaD" as `0x${string}`,
-  EscrowAdjudicator: "0x44d0efE9E1d8529f4295C8EBE7c6426F7e1493EC" as `0x${string}`,
+  // Redeployed 2026-08-16: challenge()/challenge_proposal() bonds were
+  // collected but had zero code path back out - permanently stuck funds
+  // in the flagship contested-evidence mechanic. resolve() now refunds or
+  // forfeits every challenge bond, and accept_escrow's provider_bond is
+  // refunded/forfeited on outcome instead of sitting unclaimed forever.
+  // See SECURITY.md "Known limitations" for what this means for the funds
+  // already stuck in the old, now-abandoned deployments.
+  EscrowAdjudicator: "0xcC2F11Aa3971195BBBA9696CDe6283aa54a196cE" as `0x${string}`,
   VaultManager: "0x0815b09F89C97807c50e9fB2aa2744E21C895122" as `0x${string}`,
-  PredictionMarket: "0x040CAb1ae474C6d775367734D13c903992b1806B" as `0x${string}`,
+  PredictionMarket: "0xc45693a4404737039A1A69b338Bef0083752dcb7" as `0x${string}`,
   CreditLine: "0xC04F7900840a8088909b906bD429A4a834715Ca5" as `0x${string}`,
 } as const;
 

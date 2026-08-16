@@ -191,5 +191,16 @@ export function useWallet() {
     setState({ ...DEFAULT });
   }, []);
 
-  return { ..._state, wallets, connect, disconnect };
+  const switchNetwork = useCallback(async () => {
+    if (!_state.provider) return;
+    try {
+      await switchToBradbury(_state.provider);
+      const chainId = (await _state.provider.request({ method: "eth_chainId" })) as string;
+      setState({ chainId, onBradbury: chainId === BRADBURY_CHAIN.chainId });
+    } catch (e) {
+      setState({ error: e instanceof Error ? e.message : "Failed to switch network" });
+    }
+  }, []);
+
+  return { ..._state, wallets, connect, disconnect, switchNetwork };
 }

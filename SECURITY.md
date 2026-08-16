@@ -38,11 +38,11 @@ GenLayer portal reviewers and anyone auditing the contracts in `contracts/`.
 | EscrowAdjudicator | `create_escrow` | Anyone (becomes funder) | funder != provider enforced |
 | EscrowAdjudicator | `accept_escrow` | Named provider only | `sender != provider` reverts |
 | EscrowAdjudicator | `submit_evidence` | Named provider only | `sender != provider` reverts |
-| EscrowAdjudicator | `challenge` | Anyone (bond required) | payable, no self-restriction by design |
+| EscrowAdjudicator | `challenge` | Anyone (bond required) | payable, no self-restriction by design; bond refunded to challenger or forfeited to provider inside `resolve()` depending on outcome |
 | EscrowAdjudicator | `resolve` | Anyone (permissionless) | status must be `evidence_submitted`/`challenged` |
 | PredictionMarket | `stake` | Anyone | one position per staker enforced |
 | PredictionMarket | `propose_outcome` | Anyone | status must be `active` |
-| PredictionMarket | `challenge_proposal` | Anyone (bond required) | status must be `proposed`/`challenged` |
+| PredictionMarket | `challenge_proposal` | Anyone (bond required) | status must be `proposed`/`challenged`; bond refunded to challenger if vindicated, otherwise folded into the winning stake pool inside `resolve()` |
 | PredictionMarket | `resolve` | Anyone (permissionless) | status must be `proposed`/`challenged` |
 | PredictionMarket | `claim_winnings` | Staker on the winning side only | `claimed` dedupe, position must equal outcome |
 | CreditLine | `open_line` | Anyone (becomes borrower) | payable = collateral |
@@ -99,6 +99,36 @@ rather than double-paying. The same pattern covers markets and credit lines.
 `{category}_{source_address}_{instrument_id}[_{user_address}]`, checked
 before every reputation delta is applied, so a resolved instrument's outcome
 can be pulled into reputation exactly once.
+
+## Fixed since last review (2026-08-16)
+
+A brutal, unbiased re-read of the deployed code (not just its docstrings)
+found that `EscrowAdjudicator.challenge()` and `PredictionMarket.
+challenge_proposal()` collected a real, payable bond but had **no code path
+that ever paid it back out** - the funds sat in the contract forever with
+zero withdrawal path, directly in the flagship "evidence can be challenged"
+mechanic. `EscrowAdjudicator.accept_escrow()`'s optional `provider_bond` had
+the same gap. Both contracts were fixed and redeployed:
+
+- `EscrowAdjudicator.resolve()` now refunds each challenge bond to the
+  challenger if the outcome validated their doubt (`partial`/`clawback`), or
+  forfeits it to the provider if the evidence was judged fully sufficient
+  (`full_release`). `provider_bond` is refunded to the provider unless the
+  outcome is `clawback`, in which case it's forfeited to the funder.
+- `PredictionMarket.resolve()` now refunds each challenge bond to the
+  challenger if the resolved outcome differs from what was proposed (the
+  challenge was right), or folds it into the winning side's stake pool if
+  the proposal was confirmed - the contract already holds that GEN, so this
+  is a state update that increases every correct staker's payout in
+  `claim_winnings()`, not a new transfer.
+- **Honest disclosure:** this is a contract-code fix, not a data migration.
+  Any bond sent to the previous `EscrowAdjudicator` (`0x44d0efE9...`) or
+  `PredictionMarket` (`0x040CAb1a...`) deployments during earlier testing is
+  permanently unrecoverable - GenVM contracts are immutable once deployed.
+  The fix only protects funds sent to the current addresses in
+  `src/lib/contracts.ts` going forward.
+- `CreditLine` was independently re-read and has no equivalent bond
+  mechanic - every payable path there was already fully accounted for.
 
 ## Known limitations (platform, not oversight)
 

@@ -82,6 +82,11 @@ export default function EscrowDetailPage() {
             {escrow.status === "resolved" && escrow.outcome && <StatusBadge status={escrow.outcome} />}
           </div>
           <p className="compax-serif text-xl text-text-primary leading-snug italic">&ldquo;{escrow.criteria}&rdquo;</p>
+          {escrow.required_evidence_types && (
+            <p className="text-xs text-text-muted mt-2">
+              Required evidence: <span className="text-text-secondary">{escrow.required_evidence_types}</span>
+            </p>
+          )}
         </div>
       </header>
 
@@ -140,6 +145,11 @@ export default function EscrowDetailPage() {
           {(escrow.status === "accepted" || escrow.status === "evidence_submitted" || escrow.status === "challenged") && isProvider && (
             <Card>
               <CardLabel>Submit evidence</CardLabel>
+              {escrow.required_evidence_types && (
+                <p className="text-xs text-text-muted mt-2 mb-1">
+                  The funder expects: <span className="text-text-secondary">{escrow.required_evidence_types}</span>. The AI adjudicator weighs whether your submission matches this.
+                </p>
+              )}
               <div className="mt-3 space-y-3">
                 <Textarea
                   value={evidenceText}

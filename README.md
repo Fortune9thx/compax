@@ -81,6 +81,16 @@ This is a testnet build, verified end-to-end with real transactions - see [SUBMI
 
 ---
 
+## Roadmap
+
+What a mainnet-ready v3 would need, roughly in order:
+
+1. **A verified onchain wall-clock**, once one exists on GenVM - would let deadlines gate `resolve()`/`propose_outcome()` at the contract level instead of procedurally.
+2. **Atomic vault-to-instrument funding**, once cross-contract writes are fixed on this GenVM build - would collapse `move_to_*` + the owner's follow-up create call into one transaction.
+3. **More resolution sources per adjudication** - today each `resolve()` fetches one live data source (CoinGecko, or the first submitted evidence URL); a mainnet version would fetch and weigh several independent sources per decision.
+4. **A public keeper network** instead of a single operator-run process, so `resolve()`/`re_evaluate_mandate()` triggering isn't a single point of reliance.
+5. **Broader instrument types** beyond escrow/prediction/credit, using the same adjudication primitives (challenge, permissionless resolve, pull-based reputation) already proven out here.
+
 ## Getting Started (local dev)
 
 ```bash
