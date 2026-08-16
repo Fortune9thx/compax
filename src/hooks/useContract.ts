@@ -88,10 +88,11 @@ export interface ReputationScore {
   escrow_score: number;
   prediction_score: number;
   credit_score: number;
+  vault_score: number;
   total_actions: number;
 }
 const DEFAULT_SCORE: ReputationScore = {
-  address: "", total_score: 500, escrow_score: 0, prediction_score: 0, credit_score: 0, total_actions: 0,
+  address: "", total_score: 500, escrow_score: 0, prediction_score: 0, credit_score: 0, vault_score: 0, total_actions: 0,
 };
 export interface ReputationEvent {
   category: "escrow" | "prediction" | "credit";
@@ -144,6 +145,30 @@ export interface Vault {
   deposit_count: number;
   status: string;
   created_at: string;
+}
+export interface VaultDeposit {
+  amount: number;
+}
+export interface VaultMovement {
+  id: string;
+  vault_id: string;
+  owner: string;
+  objective: string;
+  personality: string;
+  instrument: "escrow" | "prediction" | "credit";
+  amount: number;
+  justification: string;
+  status: "executed" | "challenged" | "resolved";
+  outcome: "" | "compliant" | "violation";
+  ai_reasoning: string;
+  created_at: string;
+  resolved_at: string;
+}
+export interface VaultMovementChallenge {
+  challenger: string;
+  reason: string;
+  bond: number;
+  refunded: boolean;
 }
 
 export interface Market {
@@ -223,6 +248,9 @@ export function predictionClaimKey(marketAddress: string, marketId: string, user
 export function creditClaimKey(creditAddress: string, lineId: string) {
   return `credit_${creditAddress.toLowerCase()}_${lineId}`;
 }
+export function vaultClaimKey(vaultManagerAddress: string, movementId: string) {
+  return `vault_${vaultManagerAddress.toLowerCase()}_${movementId}`;
+}
 export function useIsClaimed(claimKey: string) {
   return useContractRead<boolean>("ReputationRegistry", "is_claimed", [claimKey], false);
 }
@@ -252,6 +280,18 @@ export function useAllVaults(offset = 0, limit = 100) {
 }
 export function useVaultCount() {
   return useContractRead<number>("VaultManager", "get_vault_count", [], 0);
+}
+export function useVaultDeposit(vaultId: string, address: string) {
+  return useContractRead<VaultDeposit>("VaultManager", "get_deposit", [vaultId, address], { amount: 0 });
+}
+export function useMovement(movementId: string) {
+  return useContractRead<VaultMovement | Record<string, never>>("VaultManager", "get_movement", [movementId], {});
+}
+export function useVaultMovements(vaultId: string, offset = 0, limit = 100) {
+  return useContractRead<VaultMovement[]>("VaultManager", "get_vault_movements", [vaultId, offset, limit], []);
+}
+export function useMovementChallenges(movementId: string, offset = 0, limit = 100) {
+  return useContractRead<VaultMovementChallenge[]>("VaultManager", "get_movement_challenges", [movementId, offset, limit], []);
 }
 
 // ─── PredictionMarket ────────────────────────────────────────────────────

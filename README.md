@@ -49,7 +49,7 @@ Every capital-moving decision uses `gl.eq_principle.prompt_non_comparative` (LLM
 |---|---|---|
 | **EscrowAdjudicator** *(hero)* | Locks capital against natural-language success criteria; a named provider accepts, submits evidence, anyone can challenge | `resolve()` fetches live web data (including the provider's own submitted evidence URL) and decides `full_release` / `partial` / `clawback`, with an exact `released_amount` |
 | **PredictionMarket** | Binary markets; anyone proposes an outcome after staking closes, anyone can challenge, the creator cannot self-resolve | `resolve()` independently re-derives the real answer from the question + live data - it can and does disagree with the proposal |
-| **VaultManager** | Mandate vaults: a stated objective + risk tolerance reasons which instrument types (escrow/prediction/credit) capital may enter | The initial mandate at creation, and any later `re_evaluate_mandate()` re-run by a keeper |
+| **VaultManager** | Mandate vaults: multi-party capital pools with individually withdrawable depositor claims; the owner moves capital toward escrow/prediction/credit with a stated justification, which any depositor can challenge | Whether a specific, contested capital movement genuinely complied with the vault's natural-language objective - not which instrument types are allowed, which is a transparent, deterministic risk-tier rule, not an AI decision |
 | **CreditLine** | Borrower posts collateral + purpose; a separate lender funds the loan with their own capital (no platform-funded pool); contested defaults are adjudicated | Loan-to-value + interest rate at open; on a contested default, the exact collateral split between lender and borrower |
 | **ReputationRegistry** *(redeployed 2026-08-10)* | Pull-based score tracking, only from adjudicated outcomes of the other four contracts | The magnitude of each score delta, weighed by the actual severity of the outcome - not a fixed constant |
 
@@ -67,6 +67,8 @@ Cut from an earlier iteration of this app, and not brought back here, because th
 - Fake "allocation" percentages that never move real capital (`VaultManager` only ever moves capital via a real value transfer, gated on the vault's actual mandate)
 - Owner-only market resolution (`PredictionMarket.resolve` is permissionless; the creator cannot force their own proposal through)
 - Unsecured, no-recourse lending (`CreditLine` is always collateralized, with real contested-default adjudication)
+- AI classification with no counterparty and no external fact to depend on (`VaultManager`'s mandate scope - which instrument types a vault permits - used to run through five-validator LLM consensus for a decision that was actually deterministic; it's now a transparent risk-tier rule, and the real adjudication moved to `resolve_movement()`, where it belongs: a genuinely contested question over a real capital movement)
+- Deposits with no individual claim (early `VaultManager` let anyone pay into someone else's vault with only the owner able to ever withdraw; deposits are now tracked per depositor, and every depositor can reclaim their own undeployed capital)
 
 ---
 
@@ -88,7 +90,7 @@ What a mainnet-ready v3 would need, roughly in order:
 1. **A verified onchain wall-clock**, once one exists on GenVM - would let deadlines gate `resolve()`/`propose_outcome()` at the contract level instead of procedurally.
 2. **Atomic vault-to-instrument funding**, once cross-contract writes are fixed on this GenVM build - would collapse `move_to_*` + the owner's follow-up create call into one transaction.
 3. **More resolution sources per adjudication** - today each `resolve()` fetches one live data source (CoinGecko, or the first submitted evidence URL); a mainnet version would fetch and weigh several independent sources per decision.
-4. **A public keeper network** instead of a single operator-run process, so `resolve()`/`re_evaluate_mandate()` triggering isn't a single point of reliance.
+4. **A public keeper network** instead of a single operator-run process, so `resolve()`/`resolve_movement()` triggering isn't a single point of reliance.
 5. **Broader instrument types** beyond escrow/prediction/credit, using the same adjudication primitives (challenge, permissionless resolve, pull-based reputation) already proven out here.
 
 ## Getting Started (local dev)

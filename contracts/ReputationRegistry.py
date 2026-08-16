@@ -21,7 +21,8 @@ class ReputationRegistry(gl.Contract):
     So instead of an adjudicating contract pushing a reputation update inline
     during its own resolve() call, ReputationRegistry itself PULLS the outcome:
     a party to a resolved instrument (or a registered keeper, on their behalf)
-    calls record_from_escrow/record_from_prediction/record_from_credit here,
+    calls record_from_escrow/record_from_prediction/record_from_credit/
+    record_from_vault here,
     passing the source contract's address and the instrument's id. This
     contract reads that instrument's finalized state directly via .view(),
     verifies it's actually resolved, and only then applies a reasoned delta.
@@ -77,15 +78,15 @@ class ReputationRegistry(gl.Contract):
     @gl.public.write
     def add_trusted_source(self, address: str, category: str) -> str:
         """Owner registers a deployed adjudicator contract (EscrowAdjudicator,
-        PredictionMarket, or CreditLine) as a trusted source of finalized
-        outcome data, after verifying it onchain post-deploy."""
+        PredictionMarket, CreditLine, or VaultManager) as a trusted source of
+        finalized outcome data, after verifying it onchain post-deploy."""
         self._only_owner()
         addr = _sanitize(address, 64).lower()
         cat = _sanitize(category, 20).lower()
         if not addr:
             raise gl.vm.UserError("address required")
-        if cat not in ("escrow", "prediction", "credit"):
-            raise gl.vm.UserError("category must be escrow, prediction, or credit")
+        if cat not in ("escrow", "prediction", "credit", "vault"):
+            raise gl.vm.UserError("category must be escrow, prediction, credit, or vault")
         self.trusted_sources[addr] = cat
         return "added"
 
@@ -132,6 +133,7 @@ class ReputationRegistry(gl.Contract):
                 "escrow_score": 0,
                 "prediction_score": 0,
                 "credit_score": 0,
+                "vault_score": 0,
                 "total_actions": 0,
             }
             self.scores[address] = json.dumps(s)
@@ -322,6 +324,53 @@ class ReputationRegistry(gl.Contract):
         self.claimed[claim_key] = "claimed"
         return "recorded"
 
+    @gl.public.write
+    def record_from_vault(self, vault_address: str, movement_id: str) -> str:
+        """Reads a resolved capital movement from `vault_address` (must be a
+        registered trusted 'vault' source) and scores the vault owner based
+        on whether that specific, contested movement was adjudicated
+        compliant or a violation of the vault's stated mandate. Only
+        resolved (i.e. actually contested and adjudicated) movements produce
+        a reputation signal - an uncontested movement has no adjudicated
+        judgment to pull. Callable by the vault owner, the movement's
+        challenger, the registry owner, or a keeper."""
+        addr = _sanitize(vault_address, 64)
+        mid = _sanitize(movement_id, 20)
+        if not self._is_trusted_source(addr, "vault"):
+            raise gl.vm.UserError("vault_address is not a registered trusted vault source")
+
+        claim_key = f"vault_{addr.lower()}_{mid}"
+        if claim_key in self.claimed:
+            raise gl.vm.UserError("already_claimed")
+
+        movement = gl.get_contract_at(Address(addr)).view().get_movement(mid)
+        if not movement:
+            raise gl.vm.UserError("movement_not_found")
+        if movement.get("status") != "resolved":
+            raise gl.vm.UserError("movement_not_resolved")
+
+        owner = str(movement.get("owner", ""))
+        caller = str(gl.message.sender_address)
+        self._require_party_or_operator(caller, (owner,))
+
+        outcome = str(movement.get("outcome", ""))
+        instrument = str(movement.get("instrument", ""))
+        amount = int(movement.get("amount", 0))
+        reasoning = _sanitize(str(movement.get("ai_reasoning", "")), 300)
+        context = (
+            f"Outcome: {outcome}. {amount} cGEN moved toward {instrument}. "
+            f"Adjudicator reasoning: {reasoning}"
+        )
+
+        if outcome == "compliant":
+            delta, reason = self._reasoned_delta("vault", "capital movement adjudicated compliant with stated mandate", context, 5, 40, 15)
+        else:
+            delta, reason = self._reasoned_delta("vault", "capital movement adjudicated a mandate violation", context, -150, -15, -75)
+
+        self._apply_delta(owner, delta, "vault", reason)
+        self.claimed[claim_key] = "claimed"
+        return "recorded"
+
     # ── views ────────────────────────────────────────────────────────
 
     @gl.public.view
@@ -333,6 +382,7 @@ class ReputationRegistry(gl.Contract):
                 "escrow_score": 0,
                 "prediction_score": 0,
                 "credit_score": 0,
+                "vault_score": 0,
                 "total_actions": 0,
             }
         return json.loads(self.scores[address])

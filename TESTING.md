@@ -56,11 +56,15 @@ From a *different* wallet, click a line in the list, and **fund** it up to the m
 - **Repay** (principal + interest) - collateral returns to you in full, lender gets paid.
 - Do nothing and let the lender **claim default** with evidence - you can then **dispute** with a rebuttal before anyone calls **resolve**, which splits the collateral based on how credible each side's case is.
 
-## 6. Create a mandate vault
+## 6. Create a mandate vault, then challenge a capital movement
 
-Go to **Vaults → New vault** - state an objective in your own words and a risk tolerance (1–10 slider). The AI decides which instrument types (escrow / prediction / credit) this vault's capital is allowed to enter - try a very conservative objective and a very aggressive one side by side to see the mandate actually differ.
+Go to **Vaults → New vault** - state an objective in your own words and a risk tolerance (1–10 slider). Which instrument types (escrow / prediction / credit) this vault can enter follows a transparent, deterministic rule from your risk tier (1-3 escrow only, 4-7 adds credit, 8-10 adds prediction) - not an AI decision, since a simple risk-tier lookup doesn't need consensus.
 
-Deposit some GEN, then try **Move capital** to an instrument type the mandate didn't approve - it will be rejected onchain, not just hidden in the UI.
+Deposit some GEN, then try **Move capital** to an instrument type your risk tier doesn't permit - it will be rejected onchain, not just hidden in the UI.
+
+Now the real adjudication: move capital to an instrument type your tier *does* permit, writing a justification for why this specific move serves your stated objective. From a *different* wallet (or the same one, permissionless like everywhere else in this app), open that movement and **Challenge** it with a bond and a reason it doesn't actually serve the mandate. Click **Resolve** - five validators independently weigh your original objective, the justification, the challenge, and live market data, and decide compliant or violation. If the challenge is vindicated, the challenger's bond comes back; if not, it's forfeited to the vault owner - never just stuck.
+
+Depositors (including the owner, who is just another depositor of their own vault) can reclaim their own undeployed capital at any time via **Withdraw** on the deposit card - nobody can withdraw money someone else deposited.
 
 ## 7. Check reputation
 

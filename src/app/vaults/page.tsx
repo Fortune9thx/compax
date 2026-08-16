@@ -20,7 +20,8 @@ export default function VaultsPage() {
         <div>
           <h1 className="compax-serif text-3xl text-text-primary">Mandate vaults</h1>
           <p className="text-sm text-text-muted mt-1.5">
-            State an objective in your own words. The mandate decides which instruments your capital may enter.
+            Multi-party capital pools. Depositors keep individual, withdrawable claims - any capital movement the
+            owner makes can be challenged and adjudicated against the stated objective.
           </p>
         </div>
         <Link href="/vaults/create">
@@ -35,7 +36,7 @@ export default function VaultsPage() {
       ) : sorted.length === 0 ? (
         <EmptyState
           title="No vaults yet"
-          description="Create a vault and state your objective - an intelligent contract will reason which instruments it permits."
+          description="Create a vault, state your objective, and set a risk tolerance - the instruments it can enter follow directly from that."
           action={<Link href="/vaults/create"><Button size="sm">Create a vault</Button></Link>}
         />
       ) : (

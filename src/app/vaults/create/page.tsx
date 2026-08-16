@@ -92,16 +92,20 @@ export default function CreateVaultPage() {
         </div>
 
         <div className="rounded-lg border border-border bg-bg-primary/40 p-4 text-xs">
-          <p className="compax-mono text-[10px] uppercase tracking-wider text-text-muted mb-2">What the AI will decide</p>
+          <p className="compax-mono text-[10px] uppercase tracking-wider text-text-muted mb-2">What determines the mandate scope</p>
           <p className="text-text-secondary leading-relaxed">
-            Which instrument types - escrow, prediction, credit - this vault&apos;s mandate permits, reasoned from
-            your objective and risk tolerance. Capital can only ever leave this vault toward an instrument type the
-            mandate has approved.
+            This is a transparent, deterministic rule, not an AI decision: risk 1-3 permits escrow only, 4-7 adds
+            credit, 8-10 adds prediction. Capital can only ever leave this vault toward an instrument type your
+            risk tier permits.
+          </p>
+          <p className="text-text-secondary leading-relaxed mt-2">
+            Your written objective is what actually gets adjudicated - it&apos;s the standard any depositor can hold
+            a capital movement to later, by challenging it. That&apos;s where this vault&apos;s real intelligence lives.
           </p>
         </div>
 
         <Button className="w-full" disabled={!canSubmit || state.phase === "deliberating" || state.phase === "submitting"} onClick={submit}>
-          {state.phase === "deliberating" || state.phase === "submitting" ? "Reasoning mandate…" : "Create vault"}
+          {state.phase === "deliberating" || state.phase === "submitting" ? "Creating vault…" : "Create vault"}
         </Button>
         {!connected && <p className="text-xs text-danger">Connect a wallet to create a vault.</p>}
 

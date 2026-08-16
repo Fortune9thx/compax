@@ -15,12 +15,11 @@
    keeper treats the instrument as eligible rather than silently skipping it
    forever.
 
-   Vault mandate re-evaluation is NOT run by this keeper: the original spec
-   ties re_evaluate_mandate to "if an EventOracle signal exists," and no
-   such oracle contract exists in this 5-contract build (only
-   ReputationRegistry, EscrowAdjudicator, VaultManager, PredictionMarket,
-   CreditLine were built). Wiring a real event source is future work, not
-   something to fake here.
+   Vault capital movements: any depositor can challenge a specific move the
+   vault owner made against the vault's stated objective. This keeper also
+   resolves any movement sitting in "challenged" status - unlike
+   escrows/markets, movements have no deadline concept, so eligibility is
+   just "has an unresolved challenge," not a date comparison.
 
    Usage:
      node keeper/cycle.mjs              # one cycle
@@ -44,6 +43,7 @@ const addr = (name) => {
 };
 const ESCROW_ADJUDICATOR = addr("EscrowAdjudicator");
 const PREDICTION_MARKET = addr("PredictionMarket");
+const VAULT_MANAGER = addr("VaultManager");
 
 const env = readFileSync("deploy/.env", "utf8");
 for (const line of env.split("\n")) {
@@ -173,16 +173,65 @@ async function resolveMarkets() {
   }
 }
 
+async function resolveVaultMovements() {
+  let vaults = [];
+  try {
+    vaults = (await read(VAULT_MANAGER, "get_all_vaults", [0, 200])) || [];
+  } catch (e) {
+    log("vault read failed: " + String(e.message || e).slice(0, 100));
+    return;
+  }
+  const eligible = [];
+  for (const v of vaults) {
+    let movements = [];
+    try {
+      movements = (await read(VAULT_MANAGER, "get_vault_movements", [v.id, 0, 200])) || [];
+    } catch {
+      continue;
+    }
+    for (const m of movements) {
+      if (m.status === "challenged") eligible.push(m);
+    }
+  }
+  if (eligible.length === 0) {
+    log("no vault movements ready to resolve");
+    return;
+  }
+  log(`${eligible.length} vault movement(s) ready to resolve`);
+  for (const m of eligible) {
+    log(`  ${m.id} · vault ${m.vault_id} · ${m.amount} cGEN toward ${m.instrument}`);
+    if (DRY) { log("    (dry run - no write)"); continue; }
+    try {
+      const hash = await client.writeContract({
+        address: VAULT_MANAGER,
+        functionName: "resolve_movement",
+        args: [m.id],
+        value: 0n,
+      });
+      log(`    tx ${hash.slice(0, 12)}… adjudicating`);
+      const { ok } = await settle(hash, m.id);
+      if (ok) {
+        const after = await read(VAULT_MANAGER, "get_movement", [m.id]);
+        log(`    outcome: ${after?.outcome}`);
+      }
+    } catch (err) {
+      log(`    failed: ${String(err.message || err).slice(0, 120)}`);
+    }
+  }
+}
+
 async function runCycle() {
   log("── cycle start ──");
   await resolveEscrows();
   await resolveMarkets();
+  await resolveVaultMovements();
   log("── cycle end ──");
 }
 
 log(`keeper ${account.address}`);
 log(`EscrowAdjudicator ${ESCROW_ADJUDICATOR}`);
 log(`PredictionMarket ${PREDICTION_MARKET}`);
+log(`VaultManager ${VAULT_MANAGER}`);
 if (DRY) log("DRY RUN - no transactions will be sent");
 
 await runCycle();

@@ -4,8 +4,9 @@
 //
 // All 5 contracts are independent (no constructor args, no cross-calls at
 // deploy time). After deploying, register the adjudicator contracts as
-// trusted sources on ReputationRegistry (see the block at the bottom) - // without that, record_from_escrow/record_from_prediction/record_from_credit
-// will reject every claim.
+// trusted sources on ReputationRegistry (see the block at the bottom) -
+// without that, record_from_escrow/record_from_prediction/record_from_credit/
+// record_from_vault will reject every claim.
 
 import { readFileSync, writeFileSync } from "fs";
 import { fileURLToPath } from "url";
@@ -128,6 +129,7 @@ if (addresses.ReputationRegistry !== "FAILED") {
     ["EscrowAdjudicator", "escrow"],
     ["PredictionMarket", "prediction"],
     ["CreditLine", "credit"],
+    ["VaultManager", "vault"],
   ];
   for (const [contractName, category] of registrations) {
     if (addresses[contractName] === "FAILED") continue;

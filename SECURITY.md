@@ -51,10 +51,11 @@ GenLayer portal reviewers and anyone auditing the contracts in `contracts/`.
 | CreditLine | `claim_default` | Lender only | `sender != lender` reverts |
 | CreditLine | `dispute_default` | Borrower only | `sender != borrower` reverts |
 | CreditLine | `resolve_default` | Anyone (permissionless) | status must be `default_claimed`/`disputed` |
-| VaultManager | `deposit` | Anyone | none needed (adds to treasury) |
-| VaultManager | `withdraw` | Vault owner only | `sender != owner` reverts |
-| VaultManager | `move_to_*` | Vault owner only | `sender != owner` reverts, plus mandate allowlist check |
-| VaultManager | `re_evaluate_mandate` | Vault owner or registered keeper | `_is_keeper` / owner check |
+| VaultManager | `deposit` | Anyone | none needed (adds to treasury, tracked per-depositor) |
+| VaultManager | `withdraw_deposit` | Any depositor, own claim only | balance/treasury bounds check; owner has no special claim over others' deposits |
+| VaultManager | `move_to_*` | Vault owner only | `sender != owner` reverts, plus deterministic risk-tier allowlist check |
+| VaultManager | `challenge_movement` | Anyone (bond required) | status must be `executed`; bond refunded to challenger or forfeited to owner inside `resolve_movement()` |
+| VaultManager | `resolve_movement` | Anyone (permissionless) | status must be `challenged` |
 | VaultManager | `add_keeper`/`remove_keeper` | Owner (deployer) only | `_only_owner` |
 | ReputationRegistry | `record_from_*` | A party to the instrument, the owner, or a registered keeper | `_require_party_or_operator` |
 | ReputationRegistry | `add_trusted_source`/`add_keeper` | Owner (deployer) only | `_only_owner` |
@@ -129,6 +130,38 @@ the same gap. Both contracts were fixed and redeployed:
   `src/lib/contracts.ts` going forward.
 - `CreditLine` was independently re-read and has no equivalent bond
   mechanic - every payable path there was already fully accounted for.
+
+## Fixed since last review (2026-08-16, second pass) - VaultManager redesign
+
+Two more issues found on re-review, both in `VaultManager`, and both fixed
+by redesigning the contract rather than patching around them:
+
+- **Unprotected third-party deposits.** `deposit()` was payable by anyone
+  into any vault, but only the vault *owner* could ever `withdraw()` -
+  meaning a depositor's funds became the owner's to keep, with zero
+  recourse. Fixed: deposits are now individually tracked per depositor
+  (`vault_deposits`), and `withdraw_deposit()` lets each depositor reclaim
+  only their own undeployed capital. The owner has no special claim over
+  money they didn't deposit themselves.
+- **Decorative AI in mandate-setting.** `_reasoned_allowed_instruments()`
+  ran a five-validator LLM classification with no counterparty, no
+  contestability, and no dependency on any external fact - exactly the
+  "better LLM response, not a real trust problem" pattern GenLayer
+  reviewers reject. Fixed by removing it: which instrument types a vault's
+  risk tier permits is now a transparent, deterministic rule
+  (`_deterministic_allowed_instruments`), auditable by reading the function.
+  The real Intelligent Contract behavior moved to where a genuine, contested
+  trust problem actually exists: `resolve_movement()` adjudicates whether a
+  *specific* capital movement the owner made, with a stated justification,
+  actually complied with the vault's natural-language objective - triggered
+  by `challenge_movement()` (any depositor, real bond), weighing live market
+  context, exactly the same challenge/bond/resolve/reputation pattern
+  already proven in `EscrowAdjudicator`/`PredictionMarket`.
+
+`ReputationRegistry` was extended with a fourth trusted-source category
+(`"vault"`) and `record_from_vault()`, and redeployed alongside
+`VaultManager`; all four adjudicating contracts were re-registered as
+trusted sources on the new address.
 
 ## Known limitations (platform, not oversight)
 

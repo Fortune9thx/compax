@@ -12,7 +12,10 @@ const LABELS: Record<string, { tone: StatusTone; label: string }> = {
   // market
   active: { tone: "active", label: "Active" },
   proposed: { tone: "warning", label: "Proposed" },
-  // vault
+  // vault movement
+  executed: { tone: "active", label: "Executed" },
+  compliant: { tone: "success", label: "Compliant" },
+  violation: { tone: "danger", label: "Violation" },
   // credit
   funded: { tone: "active", label: "Funded" },
   repaid: { tone: "success", label: "Repaid" },
