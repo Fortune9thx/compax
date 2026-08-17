@@ -5,6 +5,7 @@ import { createClient } from "genlayer-js";
 import { testnetBradbury } from "genlayer-js/chains";
 import { _state } from "@/hooks/useWallet";
 import { CONTRACTS } from "@/lib/contracts";
+import { extractRevertReason } from "@/lib/genlayer";
 
 export type DeliberationPhase = "idle" | "submitting" | "deliberating" | "accepted" | "failed";
 
@@ -71,13 +72,24 @@ export function useDeliberation() {
           if (statusName.includes("ACCEPT") || statusName.includes("FINAL")) {
             const ok =
               execResult === "FINISHED_WITH_RETURN" || execResult === "" || execResult.includes("SUCCESS");
+            let error: string | undefined;
+            if (!ok) {
+              error = `Execution ${execResult || "failed"}`;
+              try {
+                const trace = (await client.debugTraceTransaction({ hash })) as { return_data?: string };
+                const reason = extractRevertReason(trace?.return_data);
+                if (reason) error = reason;
+              } catch {
+                // best-effort only - keep the generic message
+              }
+            }
             setState({
               phase: ok ? "accepted" : "failed",
               txHash: hash as string,
               statusName,
               execResult,
               validatorVotes,
-              error: ok ? undefined : `Execution ${execResult || "failed"}`,
+              error,
             });
             return { ok, txHash: hash as string };
           }

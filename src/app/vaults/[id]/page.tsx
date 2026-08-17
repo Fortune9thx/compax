@@ -245,7 +245,7 @@ function MovementRow({ movement, isOwner, onChanged }: { movement: VaultMovement
             state={state}
             onDismiss={reset}
             resolution={
-              movement.status === "resolved"
+              state.phase === "accepted" && movement.status === "resolved"
                 ? { reasoning: movement.ai_reasoning, outcomeLabel: movement.outcome }
                 : undefined
             }

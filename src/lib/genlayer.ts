@@ -44,6 +44,65 @@ function hardenProvider(provider: unknown): unknown {
   });
 }
 
+// ─── Best-effort human-readable revert reason ───
+// GenVM's debug trace returns the raw error object as a length-prefixed
+// binary blob (undocumented format, no public decoder exported from
+// genlayer-js). Rather than reimplement that binary format, we scrape
+// printable-ASCII runs out of it - the literal UserError message we raise
+// in our own contracts (e.g. "market_not_ready_for_resolution") shows up
+// verbatim as one of those runs, distinctly longer than the surrounding
+// GenVM/Python stack-trace noise tokens. Best-effort only: falls back to
+// null (caller shows a generic message) if nothing usable is found.
+const TRACE_NOISE = [
+  "module_name", "cpython", "module_instances", "memories", "softfloat",
+  "kind", "storage_changes", "storage_proof", "fingerprint", "frames", "events",
+];
+
+function isTraceNoise(s: string): boolean {
+  const lower = s.toLowerCase();
+  return TRACE_NOISE.some((n) => lower.includes(n));
+}
+
+export function extractRevertReason(hexReturnData: unknown): string | null {
+  if (typeof hexReturnData !== "string" || !hexReturnData.startsWith("0x")) return null;
+  try {
+    const hex = hexReturnData.slice(2);
+    const bytes = new Uint8Array(hex.length / 2);
+    for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+
+    const runs: string[] = [];
+    let cur: number[] = [];
+    for (const b of bytes) {
+      if (b >= 0x20 && b <= 0x7e) {
+        cur.push(b);
+      } else {
+        if (cur.length >= 6) runs.push(String.fromCharCode(...cur));
+        cur = [];
+      }
+    }
+    if (cur.length >= 6) runs.push(String.fromCharCode(...cur));
+
+    const candidates = runs.filter((r) => !isTraceNoise(r));
+    if (candidates.length === 0) return null;
+    const best = candidates.reduce((a, b) => (b.length > a.length ? b : a));
+    return best.replace(/_/g, " ").trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+async function tryExtractRevertReason(
+  client: { debugTraceTransaction: (a: { hash: string }) => Promise<unknown> },
+  hash: string
+): Promise<string | null> {
+  try {
+    const trace = (await client.debugTraceTransaction({ hash })) as { return_data?: string };
+    return extractRevertReason(trace?.return_data);
+  } catch {
+    return null;
+  }
+}
+
 // ─── Write client - MetaMask signs via EIP-1193 provider (Bradbury pattern) ───
 async function getWriteClient(provider: unknown, address: string) {
   // Do NOT call client.connect() here - inside genlayer-js that function talks
@@ -85,6 +144,17 @@ export async function writeContract(
     interval: 5000,
     retries: 120,
   });
+
+  const execResult = String((receipt as { txExecutionResultName?: string })?.txExecutionResultName ?? "");
+  const ok = execResult === "FINISHED_WITH_RETURN" || execResult === "" || execResult.includes("SUCCESS");
+  if (!ok) {
+    const reason = await tryExtractRevertReason(
+      client as unknown as { debugTraceTransaction: (a: { hash: string }) => Promise<unknown> },
+      hash as string
+    );
+    throw new Error(reason ?? `Execution ${execResult || "failed"}`);
+  }
+
   return { txHash: hash as string, result: receipt };
 }
 

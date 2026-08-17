@@ -104,7 +104,7 @@ export default function MarketDetailPage() {
             state={state}
             onDismiss={reset}
             resolution={
-              market.status === "resolved"
+              state.phase === "accepted" && market.status === "resolved"
                 ? { reasoning: market.resolution_reasoning, webDataSnapshot: market.web_data_snapshot, outcomeLabel: `Resolved: ${market.outcome?.toUpperCase()}` }
                 : undefined
             }

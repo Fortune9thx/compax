@@ -111,7 +111,7 @@ export default function EscrowDetailPage() {
             state={state}
             onDismiss={reset}
             resolution={
-              escrow.status === "resolved"
+              state.phase === "accepted" && escrow.status === "resolved"
                 ? {
                     reasoning: escrow.ai_reasoning,
                     evidenceSnapshot: escrow.evidence_snapshot,

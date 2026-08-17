@@ -81,7 +81,7 @@ function CreditLineModal({ lineId, onClose, onChanged }: { lineId: string; onClo
   const { data: line, refetch } = useCreditLine(lineId);
   const { state, run, reset } = useDeliberation();
 
-  const [fundAmt, setFundAmt] = useState("");
+  const [fundAmt, setFundAmt] = useState<string | null>(null);
   const [defaultEvidence, setDefaultEvidence] = useState("");
   const [rebuttal, setRebuttal] = useState("");
 
@@ -93,10 +93,11 @@ function CreditLineModal({ lineId, onClose, onChanged }: { lineId: string; onClo
 
   const refresh = () => { refetch(); onChanged(); };
 
+  const fundValue = fundAmt ?? String(l.max_loan_amount);
   const doFund = async () => {
-    if (!fundAmt) return;
-    const r = await run("CreditLine", "fund_line", [lineId], BigInt(fundAmt));
-    if (r.ok) { setFundAmt(""); refresh(); }
+    if (!fundValue) return;
+    const r = await run("CreditLine", "fund_line", [lineId], BigInt(fundValue));
+    if (r.ok) { setFundAmt(null); refresh(); }
   };
   const doRepay = async () => {
     const r = await run("CreditLine", "repay", [lineId], BigInt(owed));
@@ -136,14 +137,21 @@ function CreditLineModal({ lineId, onClose, onChanged }: { lineId: string; onClo
           <DeliberationTheater
             state={state}
             onDismiss={reset}
-            resolution={l.status === "resolved" ? { reasoning: l.ai_reasoning, outcomeLabel: `${l.collateral_to_lender.toLocaleString()} to lender, ${l.collateral_to_borrower.toLocaleString()} to borrower` } : undefined}
+            resolution={state.phase === "accepted" && l.status === "resolved" ? { reasoning: l.ai_reasoning, outcomeLabel: `${l.collateral_to_lender.toLocaleString()} to lender, ${l.collateral_to_borrower.toLocaleString()} to borrower` } : undefined}
           />
         )}
 
         {l.status === "open" && !isBorrower && connected && (
-          <div className="flex gap-2 pt-2">
-            <Input type="number" min={1} max={l.max_loan_amount} value={fundAmt} onChange={(e) => setFundAmt(e.target.value)} placeholder="Fund amount" />
-            <Button onClick={doFund} disabled={!fundAmt || state.phase === "deliberating"}>Fund</Button>
+          <div className="pt-2">
+            <div className="flex gap-2">
+              <Input type="number" min={1} max={l.max_loan_amount} value={fundValue} onChange={(e) => setFundAmt(e.target.value)} placeholder="Fund amount" />
+              <Button onClick={doFund} disabled={!fundValue || state.phase === "deliberating"}>Fund</Button>
+            </div>
+            <p className="text-xs text-text-muted mt-2">
+              Pre-filled with the full max loan ({l.max_loan_amount.toLocaleString()} cGEN). This is a
+              single-lender line, not a pool - whoever funds first (even for less than the max) closes
+              it to everyone else, so funding the full amount gets the borrower what they were approved for.
+            </p>
           </div>
         )}
 
