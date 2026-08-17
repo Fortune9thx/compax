@@ -67,9 +67,14 @@ class ReputationRegistry(gl.Contract):
         return a in self.trusted_sources and self.trusted_sources[a] == category
 
     def _require_party_or_operator(self, caller: str, parties: tuple) -> None:
-        if caller in parties:
+        # caller is always gl.message.sender_address (checksummed), but a
+        # "party" address (e.g. an escrow's provider) may have been typed
+        # into a form at creation time in any case - never compare address
+        # strings without normalizing both sides first.
+        caller_l = caller.lower()
+        if caller_l in (p.lower() for p in parties):
             return
-        if caller == self._owner or self._is_keeper(caller):
+        if caller_l == self._owner.lower() or self._is_keeper(caller_l):
             return
         raise gl.vm.UserError("unauthorized: must be a party to the instrument, the owner, or a registered keeper")
 
@@ -126,6 +131,7 @@ class ReputationRegistry(gl.Contract):
     # ── scoring internals ────────────────────────────────────────────
 
     def _ensure_score(self, address: str) -> dict:
+        address = address.lower()
         if address not in self.scores:
             s = {
                 "address": address,
@@ -172,6 +178,7 @@ class ReputationRegistry(gl.Contract):
         return delta, reason
 
     def _apply_delta(self, address: str, delta: int, category: str, reason: str) -> None:
+        address = address.lower()
         s = self._ensure_score(address)
         s["total_score"] = max(0, s["total_score"] + delta)
         key = f"{category}_score"
@@ -375,6 +382,7 @@ class ReputationRegistry(gl.Contract):
 
     @gl.public.view
     def get_score(self, address: str) -> dict:
+        address = address.lower()
         if address not in self.scores:
             return {
                 "address": address,
@@ -389,6 +397,7 @@ class ReputationRegistry(gl.Contract):
 
     @gl.public.view
     def get_history(self, address: str, offset: int = 0, limit: int = 100) -> list:
+        address = address.lower()
         if address not in self.history_counts:
             return []
         limit = max(1, min(200, limit))

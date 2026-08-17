@@ -163,6 +163,42 @@ by redesigning the contract rather than patching around them:
 `VaultManager`; all four adjudicating contracts were re-registered as
 trusted sources on the new address.
 
+## Fixed since last review (2026-08-16, third pass) - address case-sensitivity
+
+The most consequential finding of the day. `PredictionMarket.stake()` and
+`claim_winnings()` built their internal lookup key from
+`gl.message.sender_address` (always checksummed, mixed-case) without
+normalizing it, while `get_user_stake()` compared against whatever raw
+address string the caller supplied - and browser wallets almost universally
+return lowercase addresses from `eth_accounts`/`eth_requestAccounts`. The
+practical effect: "Your stake" never displayed, and the **Claim Winnings**
+and **Claim Reputation** buttons never appeared for a real staker, even
+though a direct `claim_winnings()` call would have worked fine on-chain -
+the UI simply had no way to discover you'd won. Verified live: staking with
+a checksummed account and then reading `get_user_stake` with the same
+address lowercased returned `{}` before the fix, and the real stake after.
+
+The same bug existed at the platform level in `ReputationRegistry`:
+`_ensure_score`/`_apply_delta` (score/history writes) and `get_score`/
+`get_history` (reads) never normalized the `address` key, and
+`_require_party_or_operator` compared `gl.message.sender_address` against
+"party" addresses (like an escrow's `provider`) that were typed into a
+frontend form at creation time in whatever case the user happened to use -
+so a provider whose own address was entered in a different case than their
+wallet's natural checksum could be incorrectly denied when claiming their
+own reputation. This affected every category (escrow/prediction/credit/
+vault), not just one contract, and also affected the Reputation page's
+address-lookup field for looking up anyone else's score.
+
+Fixed by normalizing to lowercase at every write and read choke point:
+`PredictionMarket.stake/claim_winnings/get_user_stake`, and
+`ReputationRegistry._ensure_score/_apply_delta/get_score/get_history/
+_require_party_or_operator`. Both contracts redeployed; all four
+adjudicating contracts re-registered as trusted sources on the new
+`ReputationRegistry`. As with the earlier fixes, any state written under
+the old, case-fragile addresses is not migrated - a fresh deploy starts
+clean, which is what happened here.
+
 ## Known limitations (platform, not oversight)
 
 - **Cross-contract writes silently no-op on this Bradbury GenVM build.**

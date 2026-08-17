@@ -23,7 +23,15 @@ export const CONTRACTS = {
   // source category and record_from_vault(), for VaultManager's mandate-
   // adjudication redesign below. All four adjudicating contracts
   // re-registered as trusted sources on this address.
-  ReputationRegistry: "0x3E69915B7Bb66Bc4b85733113E8021c62e05298b" as `0x${string}`,
+  // Redeployed 2026-08-16 (third time same day): every address-keyed map
+  // (scores, history) and the party-authorization check now normalize to
+  // lowercase before comparing or indexing. Previously, a score/history
+  // lookup or a record_from_* party check compared gl.message.sender_address
+  // (always checksummed) against whatever case an address happened to be
+  // typed/stored in - which silently failed for any address the frontend
+  // supplies in lowercase (the normal case for eth_accounts on most
+  // wallets). This affected every category, not just one contract.
+  ReputationRegistry: "0x1654eb6704D90A48729851f4686E5213c7B9C749" as `0x${string}`,
   // Redeployed 2026-08-16: challenge()/challenge_proposal() bonds were
   // collected but had zero code path back out - permanently stuck funds
   // in the flagship contested-evidence mechanic. resolve() now refunds or
@@ -44,7 +52,14 @@ export const CONTRACTS = {
   // now hold individually tracked, withdrawable claims instead of an
   // unprotected "deposit into someone else's vault" pattern.
   VaultManager: "0xf64B7fBB4F516D0b87cE7003D31B6BA61BC716b0" as `0x${string}`,
-  PredictionMarket: "0xc45693a4404737039A1A69b338Bef0083752dcb7" as `0x${string}`,
+  // Redeployed 2026-08-16 (second time same day): stake() and
+  // claim_winnings() built their internal lookup key from
+  // gl.message.sender_address without lowercasing it, but get_user_stake()
+  // compared against the raw, un-normalized address the frontend supplied -
+  // so "Your stake" and Claim Winnings never appeared for a real staker
+  // whenever the wallet's address happened to be lowercase (the normal
+  // case for eth_accounts on most wallets). Fixed by normalizing both sides.
+  PredictionMarket: "0xE2681E5Ec27175ADC4173b949928F3Bbb24f6b07" as `0x${string}`,
   CreditLine: "0xC04F7900840a8088909b906bD429A4a834715Ca5" as `0x${string}`,
 } as const;
 

@@ -23,17 +23,21 @@ Every capital-moving decision in this app requires judgment over real-world web 
 
 | Contract | Address | Deploy tx |
 |---|---|---|
-| ReputationRegistry *(redeployed 2026-08-16)* | `0x3E69915B7Bb66Bc4b85733113E8021c62e05298b` | `0xce1cdc3b47939a9ed0479ccf03854d62d36d9fb6959d3185bdfbdb721d77f17c` |
+| ReputationRegistry *(redeployed 2026-08-16, 3rd time)* | `0x1654eb6704D90A48729851f4686E5213c7B9C749` | `0x04d16304c07e747866cd598efa3301ca1b109aba3998f3bf2a638da1e7e30683` |
 | EscrowAdjudicator *(hero, redeployed 2026-08-16)* | `0xcC2F11Aa3971195BBBA9696CDe6283aa54a196cE` | `0xfd3dbd037461ff7cc33f94d1a70f4af867d1d5d07f833bdf8fb90f8ce04a5269` |
 | VaultManager *(redesigned 2026-08-16)* | `0xf64B7fBB4F516D0b87cE7003D31B6BA61BC716b0` | `0xb04526248ed0e9bddc0fcd98d8b53b70d2ec40d37d3b0ee85173de3087081ad0` |
-| PredictionMarket *(redeployed 2026-08-16)* | `0xc45693a4404737039A1A69b338Bef0083752dcb7` | `0xcc6e97ffbe463a73b74d4024eb5966256c5c5c85c3cbcafe045ed9e01ac3a156` |
+| PredictionMarket *(redeployed 2026-08-16, 2nd time)* | `0xE2681E5Ec27175ADC4173b949928F3Bbb24f6b07` | `0x3427e4ba21d901d073af0b04571114499149cea86cd5cc0acc3d3be236983448` |
 | CreditLine | `0xC04F7900840a8088909b906bD429A4a834715Ca5` | `0x52a92d8a87514891bdfa8cd8903e8fa1a909f54a5c95a2cc4257a901f52a7146` |
 
-EscrowAdjudicator and PredictionMarket were redeployed on 2026-08-16 to fix a
-serious bug: `challenge()`/`challenge_proposal()` collected a real, payable
-bond with no code path that ever paid it back out. See [SECURITY.md](SECURITY.md#fixed-since-last-review-2026-08-16)
-for the full disclosure, including that bonds sent to the previous addresses
-during earlier testing are permanently unrecoverable.
+Four contracts were redeployed multiple times on 2026-08-16 across the same
+day's audit passes. In order: (1) EscrowAdjudicator/PredictionMarket for a
+stuck-funds bug in challenge bonds; (2) VaultManager/ReputationRegistry for
+the mandate-adjudication redesign; (3) PredictionMarket/ReputationRegistry
+again for a case-sensitivity bug that silently broke stake lookups and
+reputation scores for any wallet returning a lowercase address (the normal
+case for `eth_accounts` on most wallets). See [SECURITY.md](SECURITY.md#fixed-since-last-review-2026-08-16)
+for the full disclosure, including that bonds/stakes sent to superseded
+addresses during earlier testing are permanently unrecoverable.
 
 All 5 are independent - none take constructor arguments, none call each other automatically. Source: [`contracts/`](contracts/), single source of truth for addresses: [`src/lib/contracts.ts`](src/lib/contracts.ts).
 

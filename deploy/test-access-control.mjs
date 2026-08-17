@@ -22,10 +22,10 @@ const OWNER_KEY = process.env.ACCOUNT_PRIVATE_KEY;
 if (!OWNER_KEY) { console.error("ERROR: set ACCOUNT_PRIVATE_KEY in deploy/.env"); process.exit(1); }
 
 const CONTRACTS = {
-  ReputationRegistry: "0x3E69915B7Bb66Bc4b85733113E8021c62e05298b",
+  ReputationRegistry: "0x1654eb6704D90A48729851f4686E5213c7B9C749",
   EscrowAdjudicator: "0xcC2F11Aa3971195BBBA9696CDe6283aa54a196cE",
   VaultManager: "0xf64B7fBB4F516D0b87cE7003D31B6BA61BC716b0",
-  PredictionMarket: "0xc45693a4404737039A1A69b338Bef0083752dcb7",
+  PredictionMarket: "0xE2681E5Ec27175ADC4173b949928F3Bbb24f6b07",
   CreditLine: "0xC04F7900840a8088909b906bD429A4a834715Ca5",
 };
 

@@ -93,7 +93,7 @@ class PredictionMarket(gl.Contract):
     @gl.public.write.payable
     def stake(self, market_id: str, position: str) -> str:
         market_id = _sanitize(market_id, 20)
-        sender = str(gl.message.sender_address)
+        sender = str(gl.message.sender_address).lower()
         amount = int(gl.message.value)
         if amount <= 0:
             raise gl.vm.UserError("stake amount must be positive")
@@ -298,7 +298,7 @@ class PredictionMarket(gl.Contract):
     @gl.public.write
     def claim_winnings(self, market_id: str) -> str:
         market_id = _sanitize(market_id, 20)
-        sender = str(gl.message.sender_address)
+        sender = str(gl.message.sender_address).lower()
         if market_id not in self.markets:
             raise gl.vm.UserError("market_not_found")
         m = json.loads(self.markets[market_id])
@@ -370,7 +370,7 @@ class PredictionMarket(gl.Contract):
 
     @gl.public.view
     def get_user_stake(self, market_id: str, address: str) -> dict:
-        key = f"{market_id}_{address}"
+        key = f"{market_id}_{address.lower()}"
         if key not in self.stakes:
             return {}
         return json.loads(self.stakes[key])
