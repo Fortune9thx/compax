@@ -17,7 +17,7 @@ try {
 } catch {}
 
 const OWNER_KEY = process.env.ACCOUNT_PRIVATE_KEY;
-const ESCROW_ADDRESS = "0xcC2F11Aa3971195BBBA9696CDe6283aa54a196cE";
+const ESCROW_ADDRESS = "0x95b12ecc4087DD49694a5F2ad8788C9bb350B428";
 
 function assert(cond, msg) {
   if (!cond) throw new Error(`ASSERTION FAILED: ${msg}`);

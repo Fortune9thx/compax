@@ -23,21 +23,20 @@ Every capital-moving decision in this app requires judgment over real-world web 
 
 | Contract | Address | Deploy tx |
 |---|---|---|
-| ReputationRegistry *(redeployed 2026-08-16, 3rd time)* | `0x1654eb6704D90A48729851f4686E5213c7B9C749` | `0x04d16304c07e747866cd598efa3301ca1b109aba3998f3bf2a638da1e7e30683` |
-| EscrowAdjudicator *(hero, redeployed 2026-08-16)* | `0xcC2F11Aa3971195BBBA9696CDe6283aa54a196cE` | `0xfd3dbd037461ff7cc33f94d1a70f4af867d1d5d07f833bdf8fb90f8ce04a5269` |
-| VaultManager *(redesigned 2026-08-16)* | `0xf64B7fBB4F516D0b87cE7003D31B6BA61BC716b0` | `0xb04526248ed0e9bddc0fcd98d8b53b70d2ec40d37d3b0ee85173de3087081ad0` |
-| PredictionMarket *(redeployed 2026-08-16, 2nd time)* | `0xE2681E5Ec27175ADC4173b949928F3Bbb24f6b07` | `0x3427e4ba21d901d073af0b04571114499149cea86cd5cc0acc3d3be236983448` |
-| CreditLine | `0xC04F7900840a8088909b906bD429A4a834715Ca5` | `0x52a92d8a87514891bdfa8cd8903e8fa1a909f54a5c95a2cc4257a901f52a7146` |
+| ReputationRegistry | `0xFffD427a00E09f6a1F0E896B1B85EC886bC10483` | `0x785b124623c79c8799b5f8c3d88da682237ad0e26740e4219e112ddcc887a25a` |
+| EscrowAdjudicator *(hero)* | `0x95b12ecc4087DD49694a5F2ad8788C9bb350B428` | `0xb08ce234b093fa6f77f3914daeb1bd8463be6eff35162d252e5c9886507da3d0` |
+| VaultManager | `0xdCB85486089582295E6Fdb537Cbb0fF88e5B4b93` | `0x1d87baee32e7b3094af6517649442df7c36b0879f550925f16fdc1021f118833` |
+| PredictionMarket | `0xD75F83263bDc7D7C04F755A9db849c25Ee47d207` | `0x3690747e9e161f3f3d6e92366f3d76cf52a25d13ed3f1016f916d5422377bfd0` |
+| CreditLine | `0xEF190d82F1B6afDc7437A7B623A98F3e63Fc733f` | `0xc205aa6b95736a702fd4ef656531cc631a073aa5c70ec799ddf2a3ac102b1190` |
 
-Four contracts were redeployed multiple times on 2026-08-16 across the same
-day's audit passes. In order: (1) EscrowAdjudicator/PredictionMarket for a
-stuck-funds bug in challenge bonds; (2) VaultManager/ReputationRegistry for
-the mandate-adjudication redesign; (3) PredictionMarket/ReputationRegistry
-again for a case-sensitivity bug that silently broke stake lookups and
-reputation scores for any wallet returning a lowercase address (the normal
-case for `eth_accounts` on most wallets). See [SECURITY.md](SECURITY.md#fixed-since-last-review-2026-08-16)
-for the full disclosure, including that bonds/stakes sent to superseded
-addresses during earlier testing are permanently unrecoverable.
+All 5 were redeployed on 2026-08-16 across four consecutive audit passes in
+the same day - a stuck-funds fix in challenge bonds, the VaultManager
+mandate-adjudication redesign, an address case-sensitivity fix across
+PredictionMarket/ReputationRegistry, and finally a `genvm-lint` compliance
+fix required in every one of the five contracts. Full changelog with root
+causes: [SECURITY.md](SECURITY.md#fixed-since-last-review-2026-08-16).
+Funds/stakes sent to any earlier, now-superseded address that day are
+permanently unrecoverable - each fix required a fresh contract instance.
 
 All 5 are independent - none take constructor arguments, none call each other automatically. Source: [`contracts/`](contracts/), single source of truth for addresses: [`src/lib/contracts.ts`](src/lib/contracts.ts).
 

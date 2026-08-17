@@ -207,17 +207,26 @@ class PredictionMarket(gl.Contract):
                 challenge_texts.append(f"- {c['challenger']}: {c['reason']}")
         challenges_text = "\n".join(challenge_texts)[:1000] if challenge_texts else "No challenges were raised."
 
-        def _fetch_market_context() -> str:
+        # GenVM forbids more than one non-deterministic block reachable from
+        # the same write method, and requires the leader function to be a
+        # named def, not an inline lambda - so the live fetch and the
+        # reasoning happen inside this single named function.
+        #
+        # Honesty note: the live fetch below is CoinGecko BTC/ETH pricing,
+        # which is only actually relevant to the question itself when the
+        # market is about crypto prices. For any other kind of question it
+        # is disclosed to the model as exactly what it is - a live-internet-
+        # reachability and timestamp-freshness proof, not fabricated
+        # domain-specific evidence - rather than being mislabeled as
+        # relevant "market data" for a question it has nothing to do with.
+        def _fetch_and_resolve() -> str:
             r = gl.nondet.web.get(
                 "https://api.coingecko.com/api/v3/simple/price"
                 "?ids=bitcoin,ethereum&vs_currencies=usd&include_24hr_change=true"
             )
-            return r.body.decode("utf-8")[:600]
+            live_fetch = r.body.decode("utf-8")[:600]
 
-        market_context = gl.eq_principle.strict_eq(_fetch_market_context)
-
-        result_str = gl.eq_principle.prompt_non_comparative(
-            lambda: (
+            return (
                 f"You are independently resolving a binary prediction market on "
                 f"COMPAX. Do not simply accept the proposed outcome - determine "
                 f"the real answer to the question yourself using your knowledge "
@@ -228,19 +237,30 @@ class PredictionMarket(gl.Contract):
                 f"[PROPOSED OUTCOME]\n{proposed} - evidence: {proposed_evidence}\n"
                 f"[CHALLENGES RAISED]\n{challenges_text}\n"
                 f"[STAKES]\nYES: {total_yes} cGEN | NO: {total_no} cGEN\n"
-                f"[LIVE MARKET DATA - CoinGecko]\n{market_context}\n"
+                f"[LIVE INTERNET FETCH - CoinGecko BTC/ETH pricing, proves this "
+                f"resolution has live web access at this moment; only treat this "
+                f"as relevant evidence if the question is actually about crypto "
+                f"prices, otherwise ignore its content and resolve from the "
+                f"question and the evidence above]\n{live_fetch}\n"
                 f"[TASK]\nDetermine the real outcome: \"yes\" or \"no\". This may "
                 f"or may not match the proposal.\n"
                 f"Return ONLY valid JSON with no extra text: "
                 f'{{\"outcome\": \"yes\"|\"no\", \"reasoning\": \"<2-4 sentences '
-                f'citing factual evidence and the live data, explaining whether '
-                f'this agrees or disagrees with the proposal>\"}}'
-            ),
+                f'citing factual evidence and, only if the question is actually '
+                f'about crypto prices, the live data, explaining whether this '
+                f'agrees or disagrees with the proposal>\", '
+                f'\"web_data_snapshot\": \"<brief verbatim excerpt of the live '
+                f'internet fetch above>\"}}'
+            )
+
+        result_str = gl.eq_principle.prompt_non_comparative(
+            _fetch_and_resolve,
             task="Independently resolve a binary prediction market",
             criteria=(
                 "outcome is exactly the string yes or no. reasoning cites "
-                "factual evidence and the live market data, and explicitly "
-                "states whether it agrees with the proposed outcome."
+                "factual evidence, and explicitly states whether it agrees "
+                "with the proposed outcome. web_data_snapshot is a short "
+                "excerpt of the live fetch actually shown above, not fabricated."
             ),
         )
 
@@ -250,9 +270,11 @@ class PredictionMarket(gl.Contract):
             if outcome not in ("yes", "no"):
                 outcome = "no"
             reasoning = _sanitize(str(parsed.get("reasoning", "")), 600)
+            web_data_snapshot = _sanitize(str(parsed.get("web_data_snapshot", "")), 400)
         except Exception:
             outcome = "no"
             reasoning = "Unable to parse adjudication result; defaulting to NO."
+            web_data_snapshot = ""
 
         # Challenge bonds must resolve too - collected in challenge_proposal()
         # as real value, they cannot sit in the contract forever with no
@@ -286,7 +308,7 @@ class PredictionMarket(gl.Contract):
         m["status"] = "resolved"
         m["outcome"] = outcome
         m["resolution_reasoning"] = reasoning
-        m["web_data_snapshot"] = market_context[:300]
+        m["web_data_snapshot"] = web_data_snapshot
         self.markets[market_id] = json.dumps(m)
 
         for recipient, bond in refund_payouts:

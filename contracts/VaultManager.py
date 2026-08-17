@@ -346,16 +346,18 @@ class VaultManager(gl.Contract):
                 challenge_texts.append(f"- {c['challenger']}: {c['reason']}")
         challenges_text = "\n".join(challenge_texts)[:1000] if challenge_texts else "No challenges were raised."
 
-        def _fetch_market() -> str:
+        # GenVM forbids more than one non-deterministic block reachable from
+        # the same write method, and requires the leader function to be a
+        # named def, not an inline lambda - so the live fetch and the
+        # reasoning happen inside this single named function.
+        def _fetch_and_adjudicate() -> str:
             r = gl.nondet.web.get(
                 "https://api.coingecko.com/api/v3/simple/price"
                 "?ids=bitcoin,ethereum&vs_currencies=usd&include_24hr_change=true"
             )
-            return r.body.decode("utf-8")[:400]
-        market_data = gl.eq_principle.strict_eq(_fetch_market)
+            market_data = r.body.decode("utf-8")[:400]
 
-        result_str = gl.eq_principle.prompt_non_comparative(
-            lambda: (
+            return (
                 f"You are adjudicating whether a specific capital movement out of "
                 f"a mandate vault on COMPAX complied with that vault's stated "
                 f"objective. Do not simply accept the owner's justification - "
@@ -375,7 +377,10 @@ class VaultManager(gl.Contract):
                 f'{{\"outcome\": \"compliant\"|\"violation\", '
                 f'\"reasoning\": \"<2-4 sentences citing the objective, the '
                 f'justification, and the live data>\"}}'
-            ),
+            )
+
+        result_str = gl.eq_principle.prompt_non_comparative(
+            _fetch_and_adjudicate,
             task="Adjudicate whether a specific vault capital movement complied with its mandate",
             criteria=(
                 "outcome is exactly one of compliant, violation. reasoning "

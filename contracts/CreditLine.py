@@ -60,16 +60,18 @@ class CreditLine(gl.Contract):
         line_id = f"LINE-{int(self.line_counter)}"
         self.line_counter = u256(int(self.line_counter) + 1)
 
-        def _fetch_market() -> str:
+        # GenVM forbids more than one non-deterministic block reachable from
+        # the same write method, and requires the leader function to be a
+        # named def, not an inline lambda - so the live fetch and the
+        # reasoning happen inside this single named function.
+        def _fetch_and_set_terms() -> str:
             r = gl.nondet.web.get(
                 "https://api.coingecko.com/api/v3/simple/price"
                 "?ids=bitcoin,ethereum&vs_currencies=usd&include_24hr_change=true"
             )
-            return r.body.decode("utf-8")[:400]
-        market_data = gl.eq_principle.strict_eq(_fetch_market)
+            market_data = r.body.decode("utf-8")[:400]
 
-        result_str = gl.eq_principle.prompt_non_comparative(
-            lambda: (
+            return (
                 f"You are setting terms for a collateralized credit line on "
                 f"COMPAX. A borrower has posted {collateral} cGEN in collateral "
                 f"and stated their purpose.\n"
@@ -85,7 +87,10 @@ class CreditLine(gl.Contract):
                 f'{{\"max_loan_amount\": <int 1 to {collateral}>, '
                 f'\"interest_rate_bps\": <int 100-3000>, '
                 f'\"reasoning\": \"<2-3 sentences citing the purpose and market data>\"}}'
-            ),
+            )
+
+        result_str = gl.eq_principle.prompt_non_comparative(
+            _fetch_and_set_terms,
             task="Set collateralized credit terms from a borrower's collateral and stated purpose",
             criteria=(
                 f"max_loan_amount is an integer between 1 and {collateral}, always "
@@ -246,16 +251,18 @@ class CreditLine(gl.Contract):
         default_evidence = l["default_evidence"]
         rebuttal = l["borrower_rebuttal"] or "The borrower did not submit a rebuttal."
 
-        def _fetch_market() -> str:
+        # GenVM forbids more than one non-deterministic block reachable from
+        # the same write method, and requires the leader function to be a
+        # named def, not an inline lambda - so the live fetch and the
+        # reasoning happen inside this single named function.
+        def _fetch_and_adjudicate() -> str:
             r = gl.nondet.web.get(
                 "https://api.coingecko.com/api/v3/simple/price"
                 "?ids=bitcoin,ethereum&vs_currencies=usd&include_24hr_change=true"
             )
-            return r.body.decode("utf-8")[:400]
-        market_data = gl.eq_principle.strict_eq(_fetch_market)
+            market_data = r.body.decode("utf-8")[:400]
 
-        result_str = gl.eq_principle.prompt_non_comparative(
-            lambda: (
+            return (
                 f"You are adjudicating a contested default on a collateralized "
                 f"credit line on COMPAX.\n"
                 f"[ORIGINAL PURPOSE]\n{purpose}\n"
@@ -273,7 +280,10 @@ class CreditLine(gl.Contract):
                 f'{{\"collateral_to_lender\": <int 0 to {collateral}>, '
                 f'\"collateral_to_borrower\": <int 0 to {collateral}>, '
                 f'\"reasoning\": \"<2-4 sentences citing the claim, the rebuttal, and market context>\"}}'
-            ),
+            )
+
+        result_str = gl.eq_principle.prompt_non_comparative(
+            _fetch_and_adjudicate,
             task="Adjudicate a contested credit default and split the collateral",
             criteria=(
                 f"collateral_to_lender and collateral_to_borrower are both non-negative "

@@ -37,6 +37,10 @@ yarn-error.log*
 deploy/addresses.json
 deploy/*.log
 
+# genvm-lint / python bytecode cache from linting contracts locally
+contracts/__pycache__/
+**/__pycache__/
+
 # vercel
 .vercel
 

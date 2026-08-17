@@ -218,40 +218,36 @@ class EscrowAdjudicator(gl.Contract):
                 challenge_texts.append(f"- {c['challenger']}: {c['reason']}")
         challenges_text = "\n".join(challenge_texts)[:1000] if challenge_texts else "No challenges were raised."
 
-        # Live web data - a general freshness/reachability signal (CoinGecik,
-        # consistent with the rest of this codebase's multi-source pattern),
-        # plus a direct fetch of the first evidence URL if one was submitted,
-        # since that's the actually-relevant live data for most escrows.
-        def _fetch_market() -> str:
-            r = gl.nondet.web.get(
-                "https://api.coingecko.com/api/v3/simple/price"
-                "?ids=bitcoin,ethereum&vs_currencies=usd&include_24hr_change=true"
-            )
-            return r.body.decode("utf-8")[:400]
-
-        market_data = gl.eq_principle.strict_eq(_fetch_market)
-
         first_url = ""
         for ev in evidence:
             if ev.get("urls"):
                 first_url = ev["urls"][0]
                 break
 
-        evidence_url_data = "No evidence URL to fetch."
-        if first_url:
-            def _fetch_evidence_url() -> str:
-                try:
-                    r = gl.nondet.web.get(first_url)
-                    return r.body.decode("utf-8", errors="ignore")[:800]
-                except Exception:
-                    return "URL_FETCH_FAILED"
-            try:
-                evidence_url_data = gl.eq_principle.strict_eq(_fetch_evidence_url)
-            except Exception:
-                evidence_url_data = "URL_FETCH_FAILED"
+        # GenVM forbids more than one non-deterministic block reachable from
+        # the same write method (genvm-lint: "nested non-deterministic blocks
+        # are forbidden"), and requires the leader function to be a named def,
+        # not an inline lambda. So both live fetches AND the reasoning happen
+        # inside this single named function, and the web data it saw is
+        # threaded back out through the validated JSON response itself
+        # (web_data_snapshot) rather than a side-channel variable - only the
+        # equivalence-validated return value is safe to rely on afterward.
+        def _fetch_and_adjudicate() -> str:
+            r = gl.nondet.web.get(
+                "https://api.coingecko.com/api/v3/simple/price"
+                "?ids=bitcoin,ethereum&vs_currencies=usd&include_24hr_change=true"
+            )
+            market_data = r.body.decode("utf-8")[:400]
 
-        result_str = gl.eq_principle.prompt_non_comparative(
-            lambda: (
+            evidence_url_data = "No evidence URL to fetch."
+            if first_url:
+                try:
+                    r2 = gl.nondet.web.get(first_url)
+                    evidence_url_data = r2.body.decode("utf-8", errors="ignore")[:800]
+                except Exception:
+                    evidence_url_data = "URL_FETCH_FAILED"
+
+            return (
                 f"You are adjudicating a performance escrow on COMPAX. Determine "
                 f"whether the submitted evidence, together with any live web data, "
                 f"satisfies the funder's original natural-language success criteria.\n"
@@ -274,8 +270,13 @@ class EscrowAdjudicator(gl.Contract):
                 f"Return ONLY valid JSON with no extra text: "
                 f'{{\"outcome\": \"full_release\"|\"partial\"|\"clawback\", '
                 f'\"released_amount\": <int 0 to {amount}>, '
-                f'\"reasoning\": \"<2-4 sentences citing the evidence and the live data>\"}}'
-            ),
+                f'\"reasoning\": \"<2-4 sentences citing the evidence and the live data>\", '
+                f'\"web_data_snapshot\": \"<brief verbatim excerpt of the two LIVE WEB DATA '
+                f'sections above, so an onchain reader can see what was actually fetched>\"}}'
+            )
+
+        result_str = gl.eq_principle.prompt_non_comparative(
+            _fetch_and_adjudicate,
             task="Adjudicate a performance escrow against its natural-language success criteria",
             criteria=(
                 f"outcome is exactly one of full_release, partial, clawback. "
@@ -283,7 +284,8 @@ class EscrowAdjudicator(gl.Contract):
                 f"consistent with the outcome (full_release implies released_amount "
                 f"equals {amount}; clawback implies released_amount is 0). "
                 f"reasoning explicitly cites both the submitted evidence and the "
-                f"live web data."
+                f"live web data. web_data_snapshot is a short excerpt of the live "
+                f"data actually shown above, not fabricated."
             ),
         )
 
@@ -298,10 +300,12 @@ class EscrowAdjudicator(gl.Contract):
             elif outcome == "clawback":
                 released = 0
             reasoning = _sanitize(str(parsed.get("reasoning", "")), 600)
+            web_data_snapshot = _sanitize(str(parsed.get("web_data_snapshot", "")), 600)
         except Exception:
             outcome = "clawback"
             released = 0
             reasoning = "Unable to parse adjudication result; defaulting to clawback to protect funder capital."
+            web_data_snapshot = ""
 
         # Challenge bonds must resolve too - collected in challenge() as real
         # value, they cannot sit in the contract forever with no code path
@@ -333,7 +337,7 @@ class EscrowAdjudicator(gl.Contract):
         e["released_amount"] = released
         e["ai_reasoning"] = reasoning
         e["evidence_snapshot"] = evidence_text[:600]
-        e["web_data_snapshot"] = (market_data[:200] + " | " + evidence_url_data[:400])
+        e["web_data_snapshot"] = web_data_snapshot
         self.escrows[escrow_id] = json.dumps(e)
 
         refund = amount - released

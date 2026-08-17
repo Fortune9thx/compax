@@ -148,8 +148,11 @@ class ReputationRegistry(gl.Contract):
 
     def _reasoned_delta(self, category: str, outcome: str, context: str, lo: int, hi: int, default: int) -> tuple:
         ctx = context if context else "no additional context provided"
-        result_str = gl.eq_principle.prompt_non_comparative(
-            lambda: (
+
+        # genvm-lint requires the leader function passed to a non-deterministic
+        # call to be a named def, not an inline lambda.
+        def _leader() -> str:
+            return (
                 f"You are updating a user's onchain reputation after a {category} "
                 f"adjudication outcome on COMPAX, an autonomous capital-adjudication "
                 f"platform.\n"
@@ -162,7 +165,10 @@ class ReputationRegistry(gl.Contract):
                 f"borderline dispute.\n"
                 f"Return ONLY valid JSON with no extra text: "
                 f'{{\"delta\": <int>, \"reason\": \"<one concise sentence>\"}}'
-            ),
+            )
+
+        result_str = gl.eq_principle.prompt_non_comparative(
+            _leader,
             task="Assign a reputation score delta for an adjudicated capital outcome",
             criteria=(
                 f"delta is an integer between {lo} and {hi} inclusive. "

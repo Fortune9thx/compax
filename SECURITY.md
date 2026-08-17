@@ -199,6 +199,62 @@ adjudicating contracts re-registered as trusted sources on the new
 the old, case-fragile addresses is not migrated - a fresh deploy starts
 clean, which is what happened here.
 
+## Fixed since last review (2026-08-16, fourth pass) - genvm-lint compliance
+
+The single most consequential finding of the whole audit, and the one most
+likely to have caused an outright portal rejection: **all 5 contracts
+failed `genvm-lint check`** with "nested non-deterministic blocks are
+forbidden" / "storage writes are forbidden in non-deterministic contexts" /
+"inter-contract calls are forbidden in non-deterministic contexts."
+
+Root cause, isolated by direct experimentation against minimal test
+contracts: GenVM's lint tool requires **exactly one non-deterministic call
+(`gl.eq_principle.strict_eq`/`prompt_non_comparative`) reachable per write
+method, and the leader function passed to it must be a named `def`, never
+an inline `lambda:`** - even a single, otherwise-correct `lambda:`-based
+call in complete isolation fails. Every `resolve()`/`resolve_default()`/
+`resolve_movement()`/`open_line()` in this codebase called `strict_eq`
+(to fetch live data) and then a *separate* `prompt_non_comparative` call
+(to reason, using an inline `lambda:`) - exactly the rejected pattern.
+`ReputationRegistry._reasoned_delta()` had only one call, but it also used
+a `lambda:`, which alone was enough to fail.
+
+Every write method fixed to make exactly one non-deterministic call,
+via a named function, that does its own web fetch(es) internally before
+building and returning the prompt string. Where a contract needed to
+persist a snapshot of what live data it saw (`web_data_snapshot`), that
+snapshot is now threaded back out through the validated LLM JSON response
+itself (the model is asked to echo a short excerpt of what it was shown),
+rather than a side-channel variable mutated inside the closure - the
+latter is not a documented-safe pattern, since only the equivalence-
+validated *return value* of a non-deterministic call is guaranteed
+consistent across validators.
+
+While restructuring `PredictionMarket.resolve()`, also fixed a related
+honesty issue: its live CoinGecko fetch was labeled "LIVE MARKET DATA" in
+the prompt regardless of what the market's actual question was about -
+misleading for any non-crypto question. It's now explicitly disclosed to
+the model as a live-connectivity/timestamp-freshness proof, to be treated
+as relevant evidence only when the question is genuinely about crypto
+prices.
+
+Verified with `genvm-lint check` against all 5 contracts (all pass cleanly)
+before redeploying; all 5 contracts redeployed, all four adjudicating
+contracts re-registered as trusted sources on the new `ReputationRegistry`.
+
+**Why this had gone undetected through extensive live testing:** every
+prior resolve()/record_from_*() call succeeded on Bradbury with
+`FINISHED_WITH_RETURN` throughout this project's entire history - the
+runner version this contract pins (`py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6`)
+evidently does not enforce this constraint at execution time, even though
+`genvm-lint` (which itself reports a newer runner is available) flags it
+statically. Whether a human portal reviewer runs lint against the pinned
+runner or a newer one is unknown, but a real reviewer explicitly rejected
+another project on this exact basis ("fails contract lint because it
+nests nondeterministic blocks... reorganize that flow into a supported
+GenVM pattern"), so this is treated as a hard requirement rather than a
+tool quirk to dismiss.
+
 ## Known limitations (platform, not oversight)
 
 - **Cross-contract writes silently no-op on this Bradbury GenVM build.**
