@@ -46,13 +46,18 @@ function hardenProvider(provider: unknown): unknown {
 
 // ─── Write client - MetaMask signs via EIP-1193 provider (Bradbury pattern) ───
 async function getWriteClient(provider: unknown, address: string) {
-  const client = createClient({
+  // Do NOT call client.connect() here - inside genlayer-js that function talks
+  // to the global window.ethereum directly (bypassing the provider we just
+  // configured above) and throws a hardcoded "MetaMask is not installed."
+  // for any wallet that doesn't also register itself as window.ethereum
+  // (e.g. OKX in a multi-wallet setup). chain is already set via the option
+  // above, and useWallet.ts already did the real eth_requestAccounts/
+  // chain-switch handshake against this exact provider.
+  return createClient({
     chain: testnetBradbury,
     account: address as `0x${string}`,
     provider: hardenProvider(provider) as never,
   });
-  await client.connect("testnetBradbury");
-  return client;
 }
 
 export async function writeContract(

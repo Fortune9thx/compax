@@ -40,7 +40,13 @@ export function useDeliberation() {
           account: address as `0x${string}`,
           provider: provider as never,
         });
-        await client.connect("testnetBradbury");
+        // Do NOT call client.connect() here - inside genlayer-js that function
+        // talks to the global window.ethereum directly (bypassing the provider
+        // just configured above) and throws a hardcoded "MetaMask is not
+        // installed." for any wallet that doesn't also register itself as
+        // window.ethereum (e.g. OKX in a multi-wallet setup). chain is already
+        // set via the option above, and useWallet.ts already did the real
+        // eth_requestAccounts/chain-switch handshake against this provider.
         const hash = await client.writeContract({
           address: CONTRACTS[contract],
           functionName: method,
