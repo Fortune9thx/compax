@@ -68,6 +68,13 @@ export default function EscrowDetailPage() {
     await run("EscrowAdjudicator", "resolve", [escrowId]);
     refetch();
   };
+  const doReclaim = async () => {
+    await run("EscrowAdjudicator", "reclaim_if_abandoned", [escrowId]);
+    refetch();
+  };
+
+  const deadlinePassed = escrow.deadline ? new Date(escrow.deadline) < new Date() : false;
+  const canReclaim = isFunder && deadlinePassed && (escrow.status === "open" || escrow.status === "accepted");
 
   return (
     <AppShell>
@@ -132,6 +139,19 @@ export default function EscrowDetailPage() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="space-y-6">
+          {canReclaim && (
+            <Card>
+              <CardLabel>Reclaim abandoned escrow</CardLabel>
+              <p className="text-xs text-text-secondary mt-2 mb-4">
+                The deadline has passed and the provider never {escrow.status === "open" ? "accepted" : "submitted evidence"}.
+                Reclaim your locked capital{escrow.provider_bond > 0 ? " plus the provider's forfeited bond" : ""} directly - no adjudication needed.
+              </p>
+              <Button onClick={doReclaim} disabled={writing || state.phase === "deliberating"} variant="secondary" className="w-full">
+                Reclaim {escrow.amount.toLocaleString()}{escrow.provider_bond > 0 ? ` + ${escrow.provider_bond.toLocaleString()}` : ""} cGEN
+              </Button>
+            </Card>
+          )}
+
           {escrow.status === "open" && isProvider && (
             <Card>
               <CardLabel>Accept mandate</CardLabel>

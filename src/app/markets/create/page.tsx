@@ -60,13 +60,18 @@ export default function CreateMarketPage() {
         </div>
 
         <div>
-          <Label htmlFor="sources">Preferred resolution sources (optional)</Label>
-          <Input id="sources" value={sources} onChange={(e) => setSources(e.target.value)} placeholder="e.g. CoinGecko BTC/USD spot price" />
+          <Label htmlFor="sources">Resolution source URL (optional)</Label>
+          <Input id="sources" value={sources} onChange={(e) => setSources(e.target.value)} placeholder="https://… - a real URL gets fetched live at resolution time" />
+          <FieldHint>
+            A URL here is fetched live when the market resolves and becomes the primary evidence -
+            without one, resolution relies on submitted evidence and general knowledge only.
+          </FieldHint>
         </div>
 
         <div>
           <Label htmlFor="deadline">Resolution deadline</Label>
-          <Input id="deadline" value={deadline} onChange={(e) => setDeadline(e.target.value)} placeholder="2026-09-01" />
+          <Input id="deadline" type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
+          <FieldHint>Outcomes can&apos;t be proposed until this date has passed.</FieldHint>
         </div>
 
         <Button className="w-full" disabled={!canSubmit || state.phase === "deliberating" || state.phase === "submitting"} onClick={submit}>

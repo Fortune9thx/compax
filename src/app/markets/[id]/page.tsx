@@ -48,7 +48,7 @@ export default function MarketDetailPage() {
 
   const doStake = async () => {
     if (!stakeAmt) return;
-    await run("PredictionMarket", "stake", [marketId, position], BigInt(stakeAmt));
+    await run("PredictionMarket", "stake", [marketId, position, ""], BigInt(stakeAmt));
     setStakeAmt("");
     refetch(); refetchStake();
   };

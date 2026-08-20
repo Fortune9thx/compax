@@ -1,6 +1,7 @@
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 from genlayer import *
 import json
+from datetime import datetime, timezone, timedelta
 
 
 @gl.evm.contract_interface
@@ -46,15 +47,21 @@ class CreditLine(gl.Contract):
     # ── open & fund ────────────────────────────────────────────────
 
     @gl.public.write.payable
-    def open_line(self, purpose: str) -> str:
+    def open_line(self, purpose: str, term_days: int) -> str:
         """Borrower posts collateral (gl.message.value) and states their
-        purpose; the contract reasons the terms this collateral supports."""
+        purpose; the contract reasons the terms this collateral supports.
+        term_days is the repayment window, starting when the line is
+        actually funded (not when it's opened) - claim_default() cannot be
+        called before it elapses, closing the previous gap where a lender
+        could claim default the instant after funding with zero grace
+        period."""
         collateral = int(gl.message.value)
         if collateral <= 0:
             raise gl.vm.UserError("collateral must be positive")
         purpose = _sanitize(purpose, 500)
         if not purpose:
             raise gl.vm.UserError("purpose is required")
+        term_days = max(1, min(365, int(term_days)))
 
         borrower = str(gl.message.sender_address)
         line_id = f"LINE-{int(self.line_counter)}"
@@ -120,22 +127,34 @@ class CreditLine(gl.Contract):
             "status": "open",
             "lender": "",
             "loan_amount": 0,
+            "term_days": term_days,
+            "due_date": "",
             "default_evidence": "",
             "borrower_rebuttal": "",
             "collateral_to_lender": 0,
             "collateral_to_borrower": 0,
             "ai_reasoning": "",
-            "created_at": "",
+            "created_at": datetime.now(timezone.utc).isoformat(),
             "resolved_at": "",
         })
         self.lines[line_id] = line
         return line_id
 
     @gl.public.write.payable
-    def fund_line(self, line_id: str) -> str:
+    def fund_line(self, line_id: str, on_behalf_of: str = "") -> str:
         """Any lender funds the line with their own capital (gl.message.value,
         must not exceed the AI-set max_loan_amount) - disbursed to the
-        borrower immediately."""
+        borrower immediately. The repayment term (term_days, set at
+        open_line) starts counting from this call, not from when the line
+        was opened.
+
+        on_behalf_of lets a caller (e.g. VaultManager, funding this line out
+        of a mandate vault's treasury with its own emitted value) record
+        someone else as the real lender of record, so repayment/collateral
+        splits pay that real address directly through the normal,
+        already-proven EOA payout path. Safe to leave permissionless: it
+        only ever redirects where the CALLER'S OWN lent capital's return
+        goes, never anyone else's."""
         line_id = _sanitize(line_id, 20)
         if line_id not in self.lines:
             raise gl.vm.UserError("line_not_found")
@@ -149,14 +168,17 @@ class CreditLine(gl.Contract):
         if loan_amount > l["max_loan_amount"]:
             raise gl.vm.UserError(f"exceeds_max_loan_amount: {l['max_loan_amount']}")
 
-        lender = str(gl.message.sender_address)
+        lender = _sanitize(on_behalf_of, 64) or str(gl.message.sender_address)
         if lender.lower() == l["borrower"].lower():
             raise gl.vm.UserError("borrower cannot fund their own line")
+
+        due = datetime.now(timezone.utc) + timedelta(days=int(l.get("term_days", 30)))
 
         # CEI: record state before disbursing to the borrower
         l["status"] = "funded"
         l["lender"] = lender
         l["loan_amount"] = loan_amount
+        l["due_date"] = due.isoformat()
         self.lines[line_id] = json.dumps(l)
 
         _Recipient(Address(l["borrower"])).emit_transfer(value=u256(loan_amount))
@@ -183,6 +205,7 @@ class CreditLine(gl.Contract):
 
         # CEI: record state before external transfers
         l["status"] = "repaid"
+        l["resolved_at"] = datetime.now(timezone.utc).isoformat()
         self.lines[line_id] = json.dumps(l)
 
         _Recipient(Address(l["lender"])).emit_transfer(value=u256(repay_value))
@@ -202,6 +225,8 @@ class CreditLine(gl.Contract):
         sender = str(gl.message.sender_address)
         if sender.lower() != l["lender"].lower():
             raise gl.vm.UserError("unauthorized: only the lender can claim default")
+        if l.get("due_date") and datetime.now(timezone.utc) < datetime.fromisoformat(l["due_date"]):
+            raise gl.vm.UserError(f"cannot_claim_default_before_due_date: {l['due_date']}")
 
         evidence = _sanitize(evidence, 600)
         if not evidence:
@@ -306,6 +331,7 @@ class CreditLine(gl.Contract):
         l["collateral_to_lender"] = to_lender
         l["collateral_to_borrower"] = to_borrower
         l["ai_reasoning"] = reasoning
+        l["resolved_at"] = datetime.now(timezone.utc).isoformat()
         self.lines[line_id] = json.dumps(l)
 
         if to_lender > 0:

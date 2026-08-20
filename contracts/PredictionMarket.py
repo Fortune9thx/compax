@@ -1,6 +1,7 @@
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 from genlayer import *
 import json
+from datetime import datetime, timezone
 
 
 @gl.evm.contract_interface
@@ -64,6 +65,10 @@ class PredictionMarket(gl.Contract):
             raise gl.vm.UserError("question is required")
         if not deadline:
             raise gl.vm.UserError("deadline is required")
+        try:
+            datetime.strptime(deadline, "%Y-%m-%d")
+        except ValueError:
+            raise gl.vm.UserError("deadline must be an ISO date, e.g. 2026-12-31")
 
         creator = str(gl.message.sender_address)
         market_id = f"MKT-{int(self.market_counter)}"
@@ -77,6 +82,7 @@ class PredictionMarket(gl.Contract):
             "deadline": deadline,
             "total_yes": 0,
             "total_no": 0,
+            "bonus_pool": 0,
             "status": "active",
             "proposed_outcome": "",
             "proposed_by": "",
@@ -84,16 +90,24 @@ class PredictionMarket(gl.Contract):
             "outcome": "",
             "resolution_reasoning": "",
             "web_data_snapshot": "",
-            "created_at": "",
+            "created_at": datetime.now(timezone.utc).isoformat(),
             "resolved_at": "",
         })
         self.markets[market_id] = market
         return market_id
 
     @gl.public.write.payable
-    def stake(self, market_id: str, position: str) -> str:
+    def stake(self, market_id: str, position: str, on_behalf_of: str = "") -> str:
+        """on_behalf_of lets a caller (e.g. VaultManager, funding this stake
+        out of a mandate vault's treasury with its own emitted value) record
+        someone else as the actual position-holder, so claim_winnings() pays
+        that real address directly through the normal, already-proven EOA
+        payout path - see VaultManager.py for why staking a payout-bearing
+        position AS an Intelligent Contract itself is unsafe on this GenVM
+        build (plain value transfers to an IC silently fail to deliver)."""
         market_id = _sanitize(market_id, 20)
         sender = str(gl.message.sender_address).lower()
+        holder = _sanitize(on_behalf_of, 64).lower() or sender
         amount = int(gl.message.value)
         if amount <= 0:
             raise gl.vm.UserError("stake amount must be positive")
@@ -106,7 +120,7 @@ class PredictionMarket(gl.Contract):
         if position not in ("yes", "no"):
             raise gl.vm.UserError("position must be 'yes' or 'no'")
 
-        stake_key = f"{market_id}_{sender}"
+        stake_key = f"{market_id}_{holder}"
         if stake_key in self.stakes:
             existing = json.loads(self.stakes[stake_key])
             if existing["position"] != position:
@@ -137,6 +151,9 @@ class PredictionMarket(gl.Contract):
         m = json.loads(self.markets[market_id])
         if m["status"] != "active":
             raise gl.vm.UserError("market_not_open_for_proposals")
+        deadline_dt = datetime.strptime(m["deadline"], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) < deadline_dt:
+            raise gl.vm.UserError(f"cannot_propose_before_deadline: {m['deadline']}")
 
         outcome = outcome.lower().strip()
         if outcome not in ("yes", "no"):
@@ -209,17 +226,32 @@ class PredictionMarket(gl.Contract):
 
         # GenVM forbids more than one non-deterministic block reachable from
         # the same write method, and requires the leader function to be a
-        # named def, not an inline lambda - so the live fetch and the
+        # named def, not an inline lambda - so every live fetch and the
         # reasoning happen inside this single named function.
         #
-        # Honesty note: the live fetch below is CoinGecko BTC/ETH pricing,
-        # which is only actually relevant to the question itself when the
-        # market is about crypto prices. For any other kind of question it
-        # is disclosed to the model as exactly what it is - a live-internet-
-        # reachability and timestamp-freshness proof, not fabricated
-        # domain-specific evidence - rather than being mislabeled as
-        # relevant "market data" for a question it has nothing to do with.
+        # Authoritative sourcing: if the creator gave a real URL in
+        # resolution_sources, fetch it live and make it the PRIMARY evidence
+        # - this is the actual fix for markets not being grounded in anything
+        # but party-authored text. The CoinGecko fetch below is a separate,
+        # secondary check - only relevant when the question is actually about
+        # crypto prices, disclosed to the model as exactly that rather than
+        # mislabeled as relevant "market data" for a question it has nothing
+        # to do with.
         def _fetch_and_resolve() -> str:
+            source_url = sources if sources.startswith("http") else ""
+            if source_url:
+                try:
+                    rs = gl.nondet.web.get(source_url)
+                    source_data = rs.body.decode("utf-8", errors="ignore")[:1200]
+                except Exception:
+                    source_data = "SOURCE_FETCH_FAILED"
+            else:
+                source_data = (
+                    "No fetchable source URL was provided by the market creator "
+                    "(resolution_sources was empty or not a URL) - resolve from "
+                    "the question, submitted evidence, and general knowledge only."
+                )
+
             r = gl.nondet.web.get(
                 "https://api.coingecko.com/api/v3/simple/price"
                 "?ids=bitcoin,ethereum&vs_currencies=usd&include_24hr_change=true"
@@ -233,24 +265,26 @@ class PredictionMarket(gl.Contract):
                 f"and the live data provided, then weigh the proposal and any "
                 f"challenges against that independent determination.\n"
                 f"[QUESTION]\n{question}\n"
-                f"[PREFERRED RESOLUTION SOURCES]\n{sources}\n"
+                f"[CREATOR'S STATED RESOLUTION SOURCE]\n{sources or 'none stated'}\n"
+                f"[LIVE FETCH OF THAT SOURCE - treat as the primary authoritative "
+                f"evidence when present]\n{source_data}\n"
                 f"[PROPOSED OUTCOME]\n{proposed} - evidence: {proposed_evidence}\n"
                 f"[CHALLENGES RAISED]\n{challenges_text}\n"
                 f"[STAKES]\nYES: {total_yes} cGEN | NO: {total_no} cGEN\n"
                 f"[LIVE INTERNET FETCH - CoinGecko BTC/ETH pricing, proves this "
                 f"resolution has live web access at this moment; only treat this "
                 f"as relevant evidence if the question is actually about crypto "
-                f"prices, otherwise ignore its content and resolve from the "
-                f"question and the evidence above]\n{live_fetch}\n"
+                f"prices, otherwise ignore its content]\n{live_fetch}\n"
                 f"[TASK]\nDetermine the real outcome: \"yes\" or \"no\". This may "
-                f"or may not match the proposal.\n"
+                f"or may not match the proposal. Prefer the fetched source over "
+                f"the proposer's own claim when they conflict.\n"
                 f"Return ONLY valid JSON with no extra text: "
                 f'{{\"outcome\": \"yes\"|\"no\", \"reasoning\": \"<2-4 sentences '
-                f'citing factual evidence and, only if the question is actually '
-                f'about crypto prices, the live data, explaining whether this '
-                f'agrees or disagrees with the proposal>\", '
-                f'\"web_data_snapshot\": \"<brief verbatim excerpt of the live '
-                f'internet fetch above>\"}}'
+                f'citing the fetched source if present, otherwise the strongest '
+                f'available evidence, explaining whether this agrees or '
+                f'disagrees with the proposal>\", '
+                f'\"web_data_snapshot\": \"<brief verbatim excerpt of whichever '
+                f'live fetch above actually informed the decision>\"}}'
             )
 
         result_str = gl.eq_principle.prompt_non_comparative(
@@ -258,9 +292,14 @@ class PredictionMarket(gl.Contract):
             task="Independently resolve a binary prediction market",
             criteria=(
                 "outcome is exactly the string yes or no. reasoning cites "
-                "factual evidence, and explicitly states whether it agrees "
-                "with the proposed outcome. web_data_snapshot is a short "
-                "excerpt of the live fetch actually shown above, not fabricated."
+                "the fetched resolution source when one was provided, "
+                "otherwise the strongest available evidence, and explicitly "
+                "states whether it agrees with the proposed outcome. "
+                "web_data_snapshot is a short excerpt of a live fetch shown "
+                "above, not fabricated - do not fail this on minor numeric "
+                "differences (e.g. live prices) between independent fetches, "
+                "only on content that could not plausibly come from either "
+                "fetch at all."
             ),
         )
 
@@ -281,10 +320,16 @@ class PredictionMarket(gl.Contract):
         # code path out. A challenge that turned out to be right (the
         # resolved outcome differs from what was proposed) is refunded
         # directly to the challenger. A challenge against a proposal the
-        # validators independently confirmed is forfeited into the winning
-        # stake pool, increasing every correct staker's proportional payout
-        # in claim_winnings() - the contract already holds this GEN, so this
-        # is purely a state update, not a new transfer.
+        # validators independently confirmed is forfeited into a SEPARATE
+        # bonus_pool field, distributed pro-rata to winners in
+        # claim_winnings() alongside the losing pool. It must NOT be added
+        # into total_yes/total_no directly - that field doubles as the
+        # payout-share denominator, and inflating it there under-pays every
+        # individual winner (their share of the pool shrinks) while leaving
+        # the forfeited GEN permanently stuck with no claim path. Verified
+        # by hand: payout_i = principal_i + principal_i*(losing_pool+bonus)
+        # /winning_pool, summed over all winners, exactly equals
+        # winning_pool + losing_pool + bonus - conserved, nothing stuck.
         challenge_vindicated = outcome != proposed
         refund_payouts: list = []
         forfeited_total = 0
@@ -299,15 +344,12 @@ class PredictionMarket(gl.Contract):
             else:
                 forfeited_total += bond
 
-        if forfeited_total > 0:
-            if outcome == "yes":
-                m["total_yes"] = m["total_yes"] + forfeited_total
-            else:
-                m["total_no"] = m["total_no"] + forfeited_total
+        m["bonus_pool"] = m.get("bonus_pool", 0) + forfeited_total
 
         m["status"] = "resolved"
         m["outcome"] = outcome
         m["resolution_reasoning"] = reasoning
+        m["resolved_at"] = datetime.now(timezone.utc).isoformat()
         m["web_data_snapshot"] = web_data_snapshot
         self.markets[market_id] = json.dumps(m)
 
@@ -336,11 +378,17 @@ class PredictionMarket(gl.Contract):
         if s["position"] != m["outcome"]:
             raise gl.vm.UserError("losing_position_not_claimable")
 
+        # winning_pool is the ORIGINAL stake total on the winning side only -
+        # never inflated by bonus_pool, which would shrink every individual
+        # winner's proportional share and strand GEN with no claim path.
+        # bonus_pool is added to the numerator (shared out) instead, exactly
+        # like the losing pool.
         winning_pool = m["total_yes"] if m["outcome"] == "yes" else m["total_no"]
         losing_pool = m["total_no"] if m["outcome"] == "yes" else m["total_yes"]
+        bonus_pool = m.get("bonus_pool", 0)
         principal = s["amount"]
         if winning_pool > 0:
-            payout = principal + (principal * losing_pool) // winning_pool
+            payout = principal + (principal * (losing_pool + bonus_pool)) // winning_pool
         else:
             payout = principal
 

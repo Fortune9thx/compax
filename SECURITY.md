@@ -255,21 +255,116 @@ nests nondeterministic blocks... reorganize that flow into a supported
 GenVM pattern"), so this is treated as a hard requirement rather than a
 tool quirk to dismiss.
 
+## Fixed since last review (2026-08-20, fifth pass) - steward review: sourcing, timing, custody, conservation
+
+A GenLayer steward review requested more information, flagging four
+concrete gaps: "several capital-moving decisions rely on party-authored
+text or unrelated market data, while contract-side timing, vault custody,
+and payout-conservation safeguards are incomplete." Each was independently
+verified against the actual code (not assumed from the review's wording)
+and fixed:
+
+**1. Authoritative sourcing.** `PredictionMarket.create_market()` collected
+a `resolution_sources` field but `resolve()` never fetched it - it was only
+quoted as a text label in the prompt. `resolve()` now fetches it live via
+`gl.nondet.web.get()` when it's a real URL and treats it as the primary
+evidence, ahead of the (still-disclosed-as-secondary) CoinGecko freshness
+check. Frontend hint updated to ask for a URL specifically.
+
+**2. Timing enforcement.** Real, deterministic timestamps
+(`datetime.now(timezone.utc)`, per `genlayer-docs`' transaction-context
+page - pinned to the transaction's own datetime, identical across every
+validator, no consensus needed) replace the empty `created_at`/`resolved_at`
+strings everywhere. Three real gaps closed, not just cosmetic timestamps:
+`PredictionMarket.propose_outcome()` now rejects proposals before the
+stated deadline (previously unenforced entirely - flagged honestly in this
+file's own prior version). `EscrowAdjudicator` gained
+`reclaim_if_abandoned()` - if a provider never accepts or never delivers
+before the deadline, the funder can reclaim directly; previously a
+ghosting provider left funds stuck with no way back to the funder, for the
+life of the contract. `CreditLine.open_line()` gained a `term_days`
+parameter and a real `due_date` (starting when the line is actually
+funded); `claim_default()` now rejects claims before it elapses -
+previously a lender could claim default the instant after funding, with
+zero grace period.
+
+**3. Vault custody, the big one.** `VaultManager.move_to_*` used to release
+mandate-approved capital to the vault owner's own wallet, on the belief
+that cross-contract writes were broken on this GenVM build - the owner
+then had to create the real instrument themselves, with zero onchain
+enforcement they actually did. That belief was tested directly and found
+wrong: `gl.get_contract_at(addr).emit(value=..., on='accepted').method(...)`
+genuinely delivers, including value. (The earlier "broken" finding was a
+false negative - checking state immediately after the caller's transaction
+was accepted, without waiting for `emit()`'s own asynchronous follow-up
+transaction.) `move_to_escrow`/`move_to_credit`/`move_to_prediction` now
+fund the target instrument **directly** - real enforcement that the
+mandate-approved capital is actually used for what it claims, not a
+release-and-trust handoff.
+
+Two more findings surfaced while building this, both load-bearing:
+
+- A plain value-only transfer to another Intelligent Contract (the
+  `_Recipient(...).emit_transfer()` mechanism every payout in this app
+  uses) was confirmed to silently fail to deliver when the recipient is an
+  IC instead of a real EOA - no error, no revert, value simply vanishes
+  with no rescue path. This is why every `emit()`'d creation call passes
+  an `on_behalf_of` parameter (added to `EscrowAdjudicator.create_escrow`,
+  `CreditLine.fund_line`, `PredictionMarket.stake`) so the vault **owner's
+  real EOA**, not `VaultManager`'s own address, is recorded as
+  funder/lender/position-holder - refunds then flow through the same
+  payout path already proven safe for every other user.
+- A value-carrying *internal* `emit()` with `on='finalized'` was separately
+  tested (an isolated two-contract pilot) and never delivered, even after
+  30+ minutes across two attempts - while the identical call with
+  `on='accepted'` delivered in seconds. `VaultManager` uses `on='accepted'`
+  for this reason; its class docstring explains why the resulting tradeoff
+  (a duplicate delivery is possible if this specific transaction is later
+  appealed) is safe for the methods it calls.
+
+**4. Payout conservation.** Working through `PredictionMarket`'s payout
+math by hand (not just spot-checking that one test transaction paid out a
+plausible-looking number) surfaced a real bug introduced during the
+fourth-pass genvm-lint fix: forfeited challenge bonds were added directly
+into `total_yes`/`total_no`, the same field used as the payout-share
+*denominator* in `claim_winnings()`. That dilutes every individual
+winner's proportional share instead of just adding to the pot they share -
+concretely, with 100 winning stake / 50 forfeited bond / 200 losing stake,
+the old formula only distributed 233 of the 350 GEN actually held,
+permanently stranding 117 with no sweep path. Fixed with a separate
+`bonus_pool` field, added to the payout numerator instead of the
+denominator - verified by hand and live (100/50/200 example, and a real
+600/200/400 on-chain test) to distribute the pool exactly, to the last
+unit.
+
+All four fixes verified live on Bradbury with real transactions, not just
+reasoned about: `reclaim_if_abandoned()` returning locked capital to a
+funder past deadline; `move_to_credit()` funding a real, separately-created
+credit line with the vault owner (not `VaultManager`) landing as `lender`,
+confirmed both via the line's own state and via `VaultManager`'s own
+balance staying flat through a full repay cycle; `claim_default()`
+rejecting a same-block default claim; and a full contested-market
+resolution (600 YES / 400 NO / 200 forfeited challenge bond) where the
+sole winner's `claim_winnings()` payout exactly absorbed the full 1200-unit
+pool.
+
 ## Known limitations (platform, not oversight)
 
-- **Cross-contract writes silently no-op on this Bradbury GenVM build.**
-  Confirmed via pilot testing, not assumed. This is why reputation is
-  pull-based and why `VaultManager.move_to_*` releases capital to the vault
-  owner's own wallet rather than atomically funding a new instrument.
-- **No verified onchain wall-clock.** No contract here can check "has this
-  deadline passed" - every deadline field is stored as free text and
-  enforced procedurally (the keeper, or any caller, choosing not to call
-  `resolve()`/`propose_outcome()` before the stated deadline).
 - **Storage is `TreeMap[str, str]` with JSON-serialized values.**
   `@allow_storage`/`@dataclass` and non-`str` `TreeMap` value types were
   pilot-tested on this build and became permanently unreadable after a
   successful deploy. `TreeMap[str, str]` is the only pattern verified to
   read reliably here.
+- **Internal `emit()` with `on='finalized'` and a value attached does not
+  reliably deliver on this GenVM build** (see fifth-pass note above) -
+  `on='accepted'` does, and is used instead wherever `VaultManager` needs
+  to carry value into another contract. External EOA-style payouts (forced
+  to `on='finalized'` by the platform) are unaffected.
+- **A plain value transfer to another Intelligent Contract silently fails
+  to deliver** when the recipient is an IC rather than a real EOA - no
+  error, no revert, no rescue path. Every contract in this app is careful
+  to only ever record a real human EOA (never another contract's own
+  address) as a payout recipient, specifically because of this.
 
 ## How to run the tests
 

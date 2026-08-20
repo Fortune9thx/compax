@@ -25,12 +25,6 @@ import {
 import { useWallet } from "@/hooks/useWallet";
 import { CONTRACTS } from "@/lib/contracts";
 
-const MOVE_METHODS: Record<string, string> = {
-  escrow: "move_to_escrow",
-  prediction: "move_to_prediction",
-  credit: "move_to_credit",
-};
-
 export default function VaultDetailPage() {
   const params = useParams();
   const vaultId = params?.id as string;
@@ -45,6 +39,13 @@ export default function VaultDetailPage() {
   const [moveInstrument, setMoveInstrument] = useState<"escrow" | "prediction" | "credit" | null>(null);
   const [moveAmt, setMoveAmt] = useState("");
   const [justification, setJustification] = useState("");
+  const [escProvider, setEscProvider] = useState("");
+  const [escCriteria, setEscCriteria] = useState("");
+  const [escDeadline, setEscDeadline] = useState("");
+  const [escEvidenceTypes, setEscEvidenceTypes] = useState("text, urls");
+  const [creditLineId, setCreditLineId] = useState("");
+  const [predMarketId, setPredMarketId] = useState("");
+  const [predPosition, setPredPosition] = useState<"yes" | "no">("yes");
 
   if (loading && !vault?.id) {
     return (
@@ -76,11 +77,34 @@ export default function VaultDetailPage() {
     setWithdrawAmt("");
     refreshAll();
   };
+  const canMove =
+    !!moveInstrument && !!moveAmt && !!justification.trim() &&
+    (moveInstrument !== "escrow" || (escProvider.trim() && escCriteria.trim() && escDeadline.trim())) &&
+    (moveInstrument !== "credit" || creditLineId.trim()) &&
+    (moveInstrument !== "prediction" || predMarketId.trim());
+
   const doMove = async () => {
-    if (!moveInstrument || !moveAmt || !justification.trim()) return;
-    const r = await run("VaultManager", MOVE_METHODS[moveInstrument], [vaultId, Number(moveAmt), justification.trim()]);
-    if (r.ok) {
+    if (!canMove || !moveInstrument) return;
+    let r;
+    if (moveInstrument === "escrow") {
+      r = await run("VaultManager", "move_to_escrow", [
+        vaultId, CONTRACTS.EscrowAdjudicator, Number(moveAmt),
+        escProvider.trim(), escCriteria.trim(), escDeadline.trim(), escEvidenceTypes.trim(),
+        justification.trim(),
+      ]);
+    } else if (moveInstrument === "credit") {
+      r = await run("VaultManager", "move_to_credit", [
+        vaultId, CONTRACTS.CreditLine, creditLineId.trim(), Number(moveAmt), justification.trim(),
+      ]);
+    } else {
+      r = await run("VaultManager", "move_to_prediction", [
+        vaultId, CONTRACTS.PredictionMarket, predMarketId.trim(), Number(moveAmt), predPosition, justification.trim(),
+      ]);
+    }
+    if (r?.ok) {
       setMoveAmt(""); setJustification(""); setMoveInstrument(null);
+      setEscProvider(""); setEscCriteria(""); setEscDeadline("");
+      setCreditLineId(""); setPredMarketId("");
       refreshAll();
     }
   };
@@ -141,9 +165,9 @@ export default function VaultDetailPage() {
             <Card>
               <CardLabel>Move capital to an instrument</CardLabel>
               <p className="text-xs text-text-muted mt-2 mb-3">
-                Releases mandate-approved capital to your own wallet, so you can create the real escrow, market, or
-                credit line as a separate transaction. Any depositor can later challenge this specific move against
-                the vault&apos;s stated objective.
+                Funds the real instrument directly - you never touch the principal, and the mandate is enforced
+                onchain, not just by trusting you to spend it as claimed. Any depositor can later challenge this
+                specific move against the vault&apos;s stated objective.
               </p>
               <div className="flex gap-2 mb-3">
                 {(["escrow", "prediction", "credit"] as const).map((instrument) => {
@@ -162,8 +186,47 @@ export default function VaultDetailPage() {
                   );
                 })}
               </div>
-              {moveInstrument && (
+
+              {moveInstrument === "escrow" && (
                 <div className="space-y-3">
+                  <Input value={escProvider} onChange={(e) => setEscProvider(e.target.value)} placeholder="Provider address - who must deliver" />
+                  <Textarea value={escCriteria} onChange={(e) => setEscCriteria(e.target.value)} placeholder="Success criteria" maxLength={800} charCount={escCriteria.length} rows={2} />
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input type="date" value={escDeadline} onChange={(e) => setEscDeadline(e.target.value)} />
+                    <Input value={escEvidenceTypes} onChange={(e) => setEscEvidenceTypes(e.target.value)} placeholder="Required evidence types" />
+                  </div>
+                  <p className="text-[11px] text-text-muted">Creates a brand-new escrow on {CONTRACTS.EscrowAdjudicator.slice(0, 10)}…, funded by this vault, with you as funder.</p>
+                </div>
+              )}
+
+              {moveInstrument === "credit" && (
+                <div className="space-y-3">
+                  <Input value={creditLineId} onChange={(e) => setCreditLineId(e.target.value)} placeholder="Existing line id, e.g. LINE-3" />
+                  <p className="text-[11px] text-text-muted">
+                    Funds an already-open line as lender - browse{" "}
+                    <Link href="/credit" className="text-accent-hover hover:underline">/credit</Link>{" "}
+                    for an open line&apos;s id first.
+                  </p>
+                </div>
+              )}
+
+              {moveInstrument === "prediction" && (
+                <div className="space-y-3">
+                  <Input value={predMarketId} onChange={(e) => setPredMarketId(e.target.value)} placeholder="Existing market id, e.g. MKT-2" />
+                  <div className="flex gap-2">
+                    <Button size="sm" variant={predPosition === "yes" ? "primary" : "secondary"} onClick={() => setPredPosition("yes")}>YES</Button>
+                    <Button size="sm" variant={predPosition === "no" ? "primary" : "secondary"} onClick={() => setPredPosition("no")}>NO</Button>
+                  </div>
+                  <p className="text-[11px] text-text-muted">
+                    Stakes on an active market - browse{" "}
+                    <Link href="/markets" className="text-accent-hover hover:underline">/markets</Link>{" "}
+                    for a market&apos;s id first. You claim any winnings yourself, directly, from the market page.
+                  </p>
+                </div>
+              )}
+
+              {moveInstrument && (
+                <div className="space-y-3 mt-3">
                   <Input type="number" min={1} max={vault.treasury} value={moveAmt} onChange={(e) => setMoveAmt(e.target.value)} placeholder="Amount" />
                   <Textarea
                     value={justification}
@@ -173,14 +236,11 @@ export default function VaultDetailPage() {
                     charCount={justification.length}
                     rows={2}
                   />
-                  <Button className="w-full" onClick={doMove} disabled={!moveAmt || !justification.trim() || state.phase === "deliberating"}>
+                  <Button className="w-full" onClick={doMove} disabled={!canMove || state.phase === "deliberating"}>
                     Move to {moveInstrument}
                   </Button>
                 </div>
               )}
-              <Link href={`/${moveInstrument ?? "escrows"}/create`} className="block text-[11px] text-accent-hover hover:underline mt-3">
-                After moving capital, create the instrument here →
-              </Link>
             </Card>
           )}
         </div>

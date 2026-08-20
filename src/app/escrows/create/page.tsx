@@ -35,7 +35,7 @@ export default function CreateEscrowPage() {
     const r = await run(
       "EscrowAdjudicator",
       "create_escrow",
-      [provider.trim(), criteria.trim(), deadline.trim(), evidenceTypes.trim()],
+      [provider.trim(), criteria.trim(), deadline.trim(), evidenceTypes.trim(), ""],
       BigInt(amount)
     );
     if (r.ok) setTimeout(() => router.push("/escrows"), 1200);
@@ -96,7 +96,8 @@ export default function CreateEscrowPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="deadline">Deadline</Label>
-                <Input id="deadline" value={deadline} onChange={(e) => setDeadline(e.target.value)} placeholder="2026-09-01" />
+                <Input id="deadline" type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
+                <FieldHint>If the provider never delivers, you can reclaim your funds after this date.</FieldHint>
               </div>
               <div>
                 <Label htmlFor="evidence">Required evidence types</Label>

@@ -1,6 +1,7 @@
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 from genlayer import *
 import json
+from datetime import datetime, timezone
 
 
 @gl.evm.contract_interface
@@ -57,9 +58,18 @@ class EscrowAdjudicator(gl.Contract):
     # ── creation & lifecycle ────────────────────────────────────────
 
     @gl.public.write.payable
-    def create_escrow(self, provider: str, criteria: str, deadline: str, required_evidence_types: str) -> str:
+    def create_escrow(
+        self, provider: str, criteria: str, deadline: str, required_evidence_types: str, on_behalf_of: str = ""
+    ) -> str:
         """Funder locks capital (gl.message.value) against a natural-language
-        success criteria, naming the provider who must accept and deliver."""
+        success criteria, naming the provider who must accept and deliver.
+
+        on_behalf_of lets a caller (e.g. VaultManager, funding this escrow
+        out of a mandate vault's treasury with its own emitted value) record
+        someone else as the real funder of record, so refunds pay that real
+        address directly through the normal, already-proven EOA payout path.
+        Safe to leave permissionless: it only ever redirects where the
+        CALLER'S OWN spent capital's refund goes, never anyone else's."""
         amount = int(gl.message.value)
         if amount <= 0:
             raise gl.vm.UserError("escrow must lock a positive amount")
@@ -74,8 +84,12 @@ class EscrowAdjudicator(gl.Contract):
             raise gl.vm.UserError("success criteria is required")
         if not deadline:
             raise gl.vm.UserError("deadline is required")
+        try:
+            datetime.strptime(deadline, "%Y-%m-%d")
+        except ValueError:
+            raise gl.vm.UserError("deadline must be an ISO date, e.g. 2026-12-31")
 
-        funder = str(gl.message.sender_address)
+        funder = _sanitize(on_behalf_of, 64) or str(gl.message.sender_address)
         if provider.lower() == funder.lower():
             raise gl.vm.UserError("provider must differ from funder")
 
@@ -98,7 +112,7 @@ class EscrowAdjudicator(gl.Contract):
             "evidence_snapshot": "",
             "web_data_snapshot": "",
             "provider_bond": 0,
-            "created_at": "",
+            "created_at": datetime.now(timezone.utc).isoformat(),
             "resolved_at": "",
         })
         self.escrows[escrow_id] = escrow
@@ -338,6 +352,7 @@ class EscrowAdjudicator(gl.Contract):
         e["ai_reasoning"] = reasoning
         e["evidence_snapshot"] = evidence_text[:600]
         e["web_data_snapshot"] = web_data_snapshot
+        e["resolved_at"] = datetime.now(timezone.utc).isoformat()
         self.escrows[escrow_id] = json.dumps(e)
 
         refund = amount - released
@@ -352,6 +367,42 @@ class EscrowAdjudicator(gl.Contract):
                 _Recipient(Address(recipient)).emit_transfer(value=u256(bond_amount))
 
         return outcome
+
+    @gl.public.write
+    def reclaim_if_abandoned(self, escrow_id: str) -> str:
+        """If the provider never accepted, or accepted but never submitted
+        any evidence, before the stated deadline, the funder reclaims their
+        locked capital (plus any provider bond, forfeited for abandonment)
+        directly - there is no evidence to adjudicate, just a deadline that
+        passed with nothing delivered. Without this, an escrow whose
+        provider simply never shows up had no way back to the funder."""
+        escrow_id = _sanitize(escrow_id, 20)
+        if escrow_id not in self.escrows:
+            raise gl.vm.UserError("escrow_not_found")
+        e = json.loads(self.escrows[escrow_id])
+        if e["status"] not in ("open", "accepted"):
+            raise gl.vm.UserError("not_reclaimable: evidence was submitted or this is already resolved")
+        caller = str(gl.message.sender_address)
+        if caller.lower() != e["funder"].lower():
+            raise gl.vm.UserError("unauthorized: only the funder can reclaim")
+        deadline_dt = datetime.strptime(e["deadline"], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) < deadline_dt:
+            raise gl.vm.UserError(f"cannot_reclaim_before_deadline: {e['deadline']}")
+
+        provider_bond = int(e.get("provider_bond", 0))
+        amount = e["amount"]
+
+        e["status"] = "reclaimed"
+        e["outcome"] = "reclaimed_abandoned"
+        e["released_amount"] = 0
+        e["ai_reasoning"] = "Provider never submitted evidence before the stated deadline; funder reclaimed without adjudication."
+        e["resolved_at"] = datetime.now(timezone.utc).isoformat()
+        self.escrows[escrow_id] = json.dumps(e)
+
+        payout = amount + provider_bond
+        if payout > 0:
+            _Recipient(Address(e["funder"])).emit_transfer(value=u256(payout))
+        return "reclaimed"
 
     # ── views ────────────────────────────────────────────────────────
 

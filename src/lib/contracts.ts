@@ -16,17 +16,16 @@ export const NETWORK = {
   explorerUrl: "https://explorer-bradbury.genlayer.com/",
 } as const;
 
-// Current as of 2026-08-16, fourth redeploy of the day: fixed a genvm-lint
-// failure present in all 5 contracts (multiple/lambda-based non-deterministic
-// blocks per write method are rejected by GenVM's lint tool - see
-// SECURITY.md "Fixed since last review (fourth pass)"). All 5 contracts and
-// all four trusted-source registrations verified live post-deploy.
+// Current as of 2026-08-20, fifth redeploy: real financial-invariant and
+// custody fixes raised by a GenLayer steward review - see SECURITY.md
+// "Fixed since last review (fifth pass)". All 5 contracts and all four
+// trusted-source registrations verified live post-deploy.
 export const CONTRACTS = {
-  ReputationRegistry: "0xFffD427a00E09f6a1F0E896B1B85EC886bC10483" as `0x${string}`,
-  EscrowAdjudicator: "0x95b12ecc4087DD49694a5F2ad8788C9bb350B428" as `0x${string}`,
-  VaultManager: "0xdCB85486089582295E6Fdb537Cbb0fF88e5B4b93" as `0x${string}`,
-  PredictionMarket: "0xD75F83263bDc7D7C04F755A9db849c25Ee47d207" as `0x${string}`,
-  CreditLine: "0xEF190d82F1B6afDc7437A7B623A98F3e63Fc733f" as `0x${string}`,
+  ReputationRegistry: "0x2AA037b22C60A4B741bE0A327ab3fBF8111Aa654" as `0x${string}`,
+  EscrowAdjudicator: "0xEbb35Ee78426f96D94826A8368cf233947AA3Ab0" as `0x${string}`,
+  VaultManager: "0x6603A01C16c1F865A33c36389F19D0537E94806d" as `0x${string}`,
+  PredictionMarket: "0xA94D7d2af016DC4A984546150C651b27d7fb5159" as `0x${string}`,
+  CreditLine: "0x961CDf9C1a870D1FCa71b7C31A54087bBaD71D67" as `0x${string}`,
 } as const;
 
 export type ContractName = keyof typeof CONTRACTS;

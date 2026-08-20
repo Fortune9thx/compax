@@ -90,13 +90,14 @@ function CreditLineModal({ lineId, onClose, onChanged }: { lineId: string; onClo
   const isBorrower = address?.toLowerCase() === l.borrower.toLowerCase();
   const isLender = l.lender && address?.toLowerCase() === l.lender.toLowerCase();
   const owed = l.status === "funded" ? l.loan_amount + Math.floor((l.loan_amount * l.interest_rate_bps) / 10000) : 0;
+  const dueDatePassed = l.due_date ? new Date(l.due_date) < new Date() : false;
 
   const refresh = () => { refetch(); onChanged(); };
 
   const fundValue = fundAmt ?? String(l.max_loan_amount);
   const doFund = async () => {
     if (!fundValue) return;
-    const r = await run("CreditLine", "fund_line", [lineId], BigInt(fundValue));
+    const r = await run("CreditLine", "fund_line", [lineId, ""], BigInt(fundValue));
     if (r.ok) { setFundAmt(null); refresh(); }
   };
   const doRepay = async () => {
@@ -130,6 +131,7 @@ function CreditLineModal({ lineId, onClose, onChanged }: { lineId: string; onClo
           <span>Max loan: {l.max_loan_amount.toLocaleString()} cGEN</span>
           <span>Rate: {(l.interest_rate_bps / 100).toFixed(1)}%</span>
           {l.loan_amount > 0 && <span>Funded: {l.loan_amount.toLocaleString()} cGEN</span>}
+          {l.due_date && <span>Due: {new Date(l.due_date).toLocaleDateString()}</span>}
         </div>
         {l.ai_terms_reasoning && <p className="text-xs text-text-muted leading-relaxed border-t border-border pt-3">{l.ai_terms_reasoning}</p>}
 
@@ -164,7 +166,13 @@ function CreditLineModal({ lineId, onClose, onChanged }: { lineId: string; onClo
         {l.status === "funded" && isLender && (
           <div className="space-y-2 pt-2 border-t border-border">
             <Textarea value={defaultEvidence} onChange={(e) => setDefaultEvidence(e.target.value)} placeholder="Claim default - evidence the borrower is in default." rows={2} maxLength={600} charCount={defaultEvidence.length} />
-            <Button variant="danger" className="w-full" onClick={doClaimDefault} disabled={!defaultEvidence.trim() || state.phase === "deliberating"}>Claim default</Button>
+            {dueDatePassed ? (
+              <Button variant="danger" className="w-full" onClick={doClaimDefault} disabled={!defaultEvidence.trim() || state.phase === "deliberating"}>Claim default</Button>
+            ) : (
+              <p className="text-xs text-text-muted">
+                Can&apos;t claim default until the due date passes{l.due_date ? ` (${new Date(l.due_date).toLocaleDateString()})` : ""}.
+              </p>
+            )}
           </div>
         )}
 

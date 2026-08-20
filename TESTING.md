@@ -50,11 +50,11 @@ Click **Resolve**. The AI reasons the real answer fresh from the question and li
 
 ## 5. Open a credit line
 
-Go to **Credit → Open a line** - state a purpose and post collateral. The AI sets a maximum loan (always less than your collateral) and an interest rate.
+Go to **Credit → Open a line** - state a purpose, a repayment term in days, and post collateral. The AI sets a maximum loan (always less than your collateral) and an interest rate.
 
-From a *different* wallet, click a line in the list, and **fund** it up to the max loan amount - that GEN goes straight to the borrower. As the borrower, you can either:
+From a *different* wallet, click a line in the list, and **fund** it up to the max loan amount - that GEN goes straight to the borrower, and the repayment term starts counting from this moment (not from when the line was opened). As the borrower, you can either:
 - **Repay** (principal + interest) - collateral returns to you in full, lender gets paid.
-- Do nothing and let the lender **claim default** with evidence - you can then **dispute** with a rebuttal before anyone calls **resolve**, which splits the collateral based on how credible each side's case is.
+- Do nothing until the due date passes and let the lender **claim default** with evidence - claiming before the due date is rejected onchain. You can then **dispute** with a rebuttal before anyone calls **resolve**, which splits the collateral based on how credible each side's case is.
 
 ## 6. Create a mandate vault, then challenge a capital movement
 
@@ -62,7 +62,9 @@ Go to **Vaults → New vault** - state an objective in your own words and a risk
 
 Deposit some GEN, then try **Move capital** to an instrument type your risk tier doesn't permit - it will be rejected onchain, not just hidden in the UI.
 
-Now the real adjudication: move capital to an instrument type your tier *does* permit, writing a justification for why this specific move serves your stated objective. From a *different* wallet (or the same one, permissionless like everywhere else in this app), open that movement and **Challenge** it with a bond and a reason it doesn't actually serve the mandate. Click **Resolve** - five validators independently weigh your original objective, the justification, the challenge, and live market data, and decide compliant or violation. If the challenge is vindicated, the challenger's bond comes back; if not, it's forfeited to the vault owner - never just stuck.
+Now the real move: pick an instrument type your tier *does* permit. This directly funds a real target - for **escrow**, fill in a provider/criteria/deadline and it creates a brand-new escrow with you as funder; for **credit** or **prediction**, paste the id of an already-open line or active market (browse `/credit` or `/markets` first) and it funds/stakes into it as you, the vault owner - not the vault contract itself. Write a justification for why this specific move serves your stated objective, then submit.
+
+From a *different* wallet (or the same one, permissionless like everywhere else in this app), open that movement and **Challenge** it with a bond and a reason it doesn't actually serve the mandate. Click **Resolve** - five validators independently weigh your original objective, the justification, the challenge, and live market data, and decide compliant or violation. If the challenge is vindicated, the challenger's bond comes back; if not, it's forfeited to the vault owner - never just stuck.
 
 Depositors (including the owner, who is just another depositor of their own vault) can reclaim their own undeployed capital at any time via **Withdraw** on the deposit card - nobody can withdraw money someone else deposited.
 

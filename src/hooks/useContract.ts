@@ -114,9 +114,9 @@ export interface Escrow {
   criteria: string;
   deadline: string;
   required_evidence_types: string;
-  status: "open" | "accepted" | "evidence_submitted" | "challenged" | "resolved";
+  status: "open" | "accepted" | "evidence_submitted" | "challenged" | "resolved" | "reclaimed";
   evidence: EvidenceEntry[];
-  outcome: "" | "full_release" | "partial" | "clawback";
+  outcome: "" | "full_release" | "partial" | "clawback" | "reclaimed_abandoned";
   released_amount: number;
   ai_reasoning: string;
   evidence_snapshot: string;
@@ -156,6 +156,8 @@ export interface VaultMovement {
   objective: string;
   personality: string;
   instrument: "escrow" | "prediction" | "credit";
+  target_address: string;
+  target_ref: string;
   amount: number;
   justification: string;
   status: "executed" | "challenged" | "resolved";
@@ -179,6 +181,7 @@ export interface Market {
   deadline: string;
   total_yes: number;
   total_no: number;
+  bonus_pool: number;
   status: "active" | "proposed" | "challenged" | "resolved";
   proposed_outcome: "" | "yes" | "no";
   proposed_by: string;
@@ -211,6 +214,8 @@ export interface CreditLineData {
   status: "open" | "funded" | "repaid" | "default_claimed" | "disputed" | "resolved";
   lender: string;
   loan_amount: number;
+  term_days: number;
+  due_date: string;
   default_evidence: string;
   borrower_rebuttal: string;
   collateral_to_lender: number;

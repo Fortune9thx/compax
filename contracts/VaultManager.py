@@ -1,6 +1,31 @@
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 from genlayer import *
 import json
+from datetime import datetime, timezone
+
+
+@gl.contract_interface
+class _EscrowAdjudicatorIface:
+    class View:
+        pass
+    class Write:
+        def create_escrow(self, provider: str, criteria: str, deadline: str, required_evidence_types: str, on_behalf_of: str): ...
+
+
+@gl.contract_interface
+class _CreditLineIface:
+    class View:
+        def get_line(self, line_id: str) -> dict: ...
+    class Write:
+        def fund_line(self, line_id: str, on_behalf_of: str): ...
+
+
+@gl.contract_interface
+class _PredictionMarketIface:
+    class View:
+        def get_market(self, market_id: str) -> dict: ...
+    class Write:
+        def stake(self, market_id: str, position: str, on_behalf_of: str): ...
 
 
 @gl.evm.contract_interface
@@ -62,19 +87,47 @@ class VaultManager(gl.Contract):
     deposit themselves. This closes what would otherwise be an unprotected
     "deposit into someone else's vault, owner keeps it" pattern.
 
-    Design note - why move_to_* releases capital to the OWNER instead of
-    directly funding the target instrument contract in one call: this
-    GenVM build's cross-contract WRITE calls
-    (gl.get_contract_at(addr).emit(on=...).method(args)) are confirmed
-    broken - the calling contract's tx accepts, the target's state never
-    changes (see contracts/deploy_order.md). What IS proven to work is a
-    plain value transfer with no method call (_Recipient(...).emit_transfer),
-    used throughout this contract, so move_to_* enforces the mandate
-    constraint onchain, decrements the vault's live treasury, and releases
-    the real capital to the vault owner's own wallet - who then creates the
-    actual escrow/market/credit-line themselves as a direct, separate
-    transaction. The mandate gate is enforced here regardless; only the
-    literal single-transaction atomicity is not.
+    Custody: move_to_* funds the target instrument DIRECTLY via a
+    cross-contract call carrying value (gl.get_contract_at(addr).emit(
+    value=..., on='accepted').method(...)) - confirmed working on this
+    GenVM build (see contracts/deploy_order.md; an earlier belief that
+    cross-contract writes were broken here turned out to be a false
+    negative from checking state immediately instead of waiting for the
+    emitted message's own, separate follow-up transaction). The owner never
+    touches the principal and cannot skip creating the instrument the
+    mandate was approved for - real enforcement, not a release-and-trust
+    handoff.
+
+    on='accepted', not the "safer" on='finalized', deliberately: a
+    value-carrying internal emit() with on='finalized' was empirically
+    tested twice on this GenVM build and never delivered - the child
+    transaction simply never appears, even after 30+ minutes (in contrast,
+    the identical call with on='accepted' delivered in seconds, and
+    external EOA-style payouts, which the platform forces to 'finalized',
+    deliver normally - the failure is specific to internal 'finalized'
+    emits with value). Accepting the documented on='accepted' tradeoff
+    (the message can theoretically fire again if this transaction is
+    appealed and re-executed) is safe here: every target method
+    (create_escrow, fund_line, stake) is a fresh-state creation/entry call
+    that transitions status away from its initial open state, so a
+    duplicate delivery would hit that changed status and revert - not
+    double-spend. That reverted duplicate's value is not returned to the
+    sender (see contracts/deploy_order.md's note on external-message value
+    loss - the same applies here), which is a real but narrow residual risk
+    bounded to the rare case of an actual appeal overturning this specific
+    transaction, not the normal-operation failure this design replaces.
+
+    Every emit() records the vault owner (not this contract) as the
+    counterparty of record on the target instrument, via an on_behalf_of
+    parameter those contracts accept. This is required, not cosmetic: a
+    plain value transfer to another Intelligent Contract - the mechanism
+    every payout in this app uses (refunds, repayments, winnings) - was
+    empirically confirmed on this GenVM build to silently fail to deliver
+    when the recipient is an IC rather than a real EOA. If VaultManager
+    itself became the funder/lender/staker of record, every return owed
+    back to it would be permanently stranded with no rescue path. Recording
+    the owner's real EOA instead means returns flow through the same payout
+    path already proven safe for every other user.
     """
 
     vaults: TreeMap[str, str]
@@ -167,7 +220,7 @@ class VaultManager(gl.Contract):
             "mandate_reasoning": mandate_note,
             "deposit_count": 0,
             "status": "active",
-            "created_at": "",
+            "created_at": datetime.now(timezone.utc).isoformat(),
         })
         self.vaults[vault_id] = vault
         return vault_id
@@ -226,9 +279,39 @@ class VaultManager(gl.Contract):
         _Recipient(Address(sender)).emit_transfer(value=u256(amt))
         return "withdrawn"
 
-    # ── capital movement: mandate-gated, justified, contestable ────────
+    # ── capital movement: mandate-gated, justified, contestable, REAL custody ──
+    #
+    # Capital now funds the target instrument DIRECTLY via a cross-contract
+    # call carrying value (gl.get_contract_at(...).emit(value=..., on=
+    # 'finalized').method(...)) - confirmed working on this GenVM build (see
+    # contracts/deploy_order.md). This replaces the earlier design, which
+    # released capital to the vault owner's own wallet on the belief that
+    # cross-contract writes were broken; that belief was wrong (see below),
+    # and the old design left zero onchain enforcement that an owner
+    # actually created the instrument they claimed to be funding.
+    #
+    # Every emit() below passes on_behalf_of=the vault owner's real address,
+    # NOT this contract's own address. That is required, not cosmetic: a
+    # plain value transfer to another Intelligent Contract (the mechanism
+    # every payout in this app's other 4 contracts uses - refunds,
+    # repayments, winnings) was empirically confirmed on this GenVM build to
+    # silently fail to deliver when the recipient is an IC rather than a
+    # real EOA - no error, no revert, the value just never arrives and isn't
+    # returned either. If VaultManager itself became the funder/lender/
+    # staker of record, every refund/repayment/winning owed back to it would
+    # be permanently stranded in the paying contract's own balance with no
+    # rescue path. Recording the owner's real EOA as the party of record
+    # sidesteps that entirely - returns flow through the same payout
+    # mechanism already proven safe for every other real user.
+    #
+    # Because emit() is asynchronous, none of these calls get a synchronous
+    # result back (a created escrow id, confirmation the stake landed).
+    # Parameters are pre-validated here - matching the target's own checks,
+    # and pre-checking existence via .view() for credit/prediction - because
+    # a value-carrying emitted call that reverts downstream does NOT return
+    # its value to the sender; it is simply gone.
 
-    def _move_to(self, vault_id: str, amount: u256, instrument: str, justification: str) -> str:
+    def _check_mandate_and_reserve(self, vault_id: str, amount: u256, instrument: str, justification: str) -> dict:
         vault_id = _sanitize(vault_id, 20)
         sender = str(gl.message.sender_address)
         amt = int(amount)
@@ -249,7 +332,11 @@ class VaultManager(gl.Contract):
 
         v["treasury"] = v["treasury"] - amt
         self.vaults[vault_id] = json.dumps(v)
+        return {"vault": v, "vault_id": vault_id, "amt": amt, "justification": justification}
 
+    def _record_movement(
+        self, vault_id: str, v: dict, instrument: str, amt: int, justification: str, target_address: str, target_ref: str
+    ) -> str:
         movement_id = f"MOV-{int(self.movement_counter)}"
         self.movement_counter = u256(int(self.movement_counter) + 1)
         self.movements[movement_id] = json.dumps({
@@ -259,32 +346,129 @@ class VaultManager(gl.Contract):
             "objective": v["objective"],
             "personality": v["personality"],
             "instrument": instrument,
+            "target_address": target_address,
+            "target_ref": target_ref,
             "amount": amt,
             "justification": justification,
             "status": "executed",
             "outcome": "",
             "ai_reasoning": "",
-            "created_at": "",
+            "created_at": datetime.now(timezone.utc).isoformat(),
             "resolved_at": "",
         })
-
-        _Recipient(Address(sender)).emit_transfer(value=u256(amt))
         return movement_id
 
     @gl.public.write
-    def move_to_escrow(self, vault_id: str, amount: u256, justification: str) -> str:
-        """Releases mandate-approved capital to the vault owner, who then
-        creates the real escrow themselves via EscrowAdjudicator.create_escrow().
-        Returns the movement id - any depositor can later challenge it."""
-        return self._move_to(vault_id, amount, "escrow", justification)
+    def move_to_escrow(
+        self, vault_id: str, target_address: str, amount: u256,
+        provider: str, criteria: str, deadline: str, required_evidence_types: str,
+        justification: str,
+    ) -> str:
+        """Funds a brand-new escrow directly on EscrowAdjudicator at
+        target_address, with the vault owner recorded as funder. target_ref
+        is left blank on the movement record - the created escrow's id
+        isn't known synchronously; it appears on EscrowAdjudicator shortly
+        after, funded by this vault's owner and matching this movement's
+        provider/criteria/amount."""
+        provider = _sanitize(provider, 64)
+        criteria = _sanitize(criteria, 800)
+        deadline = _sanitize(deadline, 40)
+        required_evidence_types = _sanitize(required_evidence_types, 200)
+        target_address = _sanitize(target_address, 64)
+        if not target_address:
+            raise gl.vm.UserError("target_address is required")
+        if not provider:
+            raise gl.vm.UserError("provider address is required")
+        if not criteria:
+            raise gl.vm.UserError("success criteria is required")
+        if not deadline:
+            raise gl.vm.UserError("deadline is required")
+        try:
+            datetime.strptime(deadline, "%Y-%m-%d")
+        except ValueError:
+            raise gl.vm.UserError("deadline must be an ISO date, e.g. 2026-12-31")
+
+        r = self._check_mandate_and_reserve(vault_id, amount, "escrow", justification)
+        v, amt, just = r["vault"], r["amt"], r["justification"]
+        if provider.lower() == v["owner"].lower():
+            raise gl.vm.UserError("provider must differ from the vault owner")
+
+        movement_id = self._record_movement(r["vault_id"], v, "escrow", amt, just, target_address, "")
+
+        _EscrowAdjudicatorIface(Address(target_address)).emit(value=u256(amt), on="accepted").create_escrow(
+            provider, criteria, deadline, required_evidence_types, v["owner"]
+        )
+        return movement_id
 
     @gl.public.write
-    def move_to_prediction(self, vault_id: str, amount: u256, justification: str) -> str:
-        return self._move_to(vault_id, amount, "prediction", justification)
+    def move_to_credit(
+        self, vault_id: str, target_address: str, line_id: str, amount: u256, justification: str,
+    ) -> str:
+        """Funds an EXISTING credit line at target_address as lender,
+        directly, with the vault owner recorded as lender of record. Checks
+        the target line via .view() first - open, amount within its
+        max_loan_amount - before committing any value."""
+        target_address = _sanitize(target_address, 64)
+        line_id = _sanitize(line_id, 20)
+        if not target_address:
+            raise gl.vm.UserError("target_address is required")
+        if not line_id:
+            raise gl.vm.UserError("line_id is required")
+
+        line = _CreditLineIface(Address(target_address)).view().get_line(line_id)
+        if not line:
+            raise gl.vm.UserError("target credit line not found")
+        if line.get("status") != "open":
+            raise gl.vm.UserError("target credit line is not open for funding")
+        if int(amount) > int(line.get("max_loan_amount", 0)):
+            raise gl.vm.UserError(f"exceeds target line's max_loan_amount: {line.get('max_loan_amount')}")
+
+        r = self._check_mandate_and_reserve(vault_id, amount, "credit", justification)
+        v, amt, just = r["vault"], r["amt"], r["justification"]
+        if str(line.get("borrower", "")).lower() == v["owner"].lower():
+            raise gl.vm.UserError("cannot fund your own credit line")
+
+        movement_id = self._record_movement(r["vault_id"], v, "credit", amt, just, target_address, line_id)
+
+        _CreditLineIface(Address(target_address)).emit(value=u256(amt), on="accepted").fund_line(line_id, v["owner"])
+        return movement_id
 
     @gl.public.write
-    def move_to_credit(self, vault_id: str, amount: u256, justification: str) -> str:
-        return self._move_to(vault_id, amount, "credit", justification)
+    def move_to_prediction(
+        self, vault_id: str, target_address: str, market_id: str, amount: u256, position: str, justification: str,
+    ) -> str:
+        """Stakes on an EXISTING prediction market at target_address,
+        directly, with the vault owner recorded as the position-holder. The
+        owner later claims winnings themselves, directly through the normal
+        /markets flow - claim_winnings() checks the stake against
+        gl.message.sender_address, and on_behalf_of already recorded the
+        stake under the owner's own address, so no separate VaultManager
+        claim method is needed."""
+        target_address = _sanitize(target_address, 64)
+        market_id = _sanitize(market_id, 20)
+        position = position.lower().strip()
+        if not target_address:
+            raise gl.vm.UserError("target_address is required")
+        if not market_id:
+            raise gl.vm.UserError("market_id is required")
+        if position not in ("yes", "no"):
+            raise gl.vm.UserError("position must be 'yes' or 'no'")
+
+        market = _PredictionMarketIface(Address(target_address)).view().get_market(market_id)
+        if not market:
+            raise gl.vm.UserError("target market not found")
+        if market.get("status") != "active":
+            raise gl.vm.UserError("target market is not open for staking")
+
+        r = self._check_mandate_and_reserve(vault_id, amount, "prediction", justification)
+        v, amt, just = r["vault"], r["amt"], r["justification"]
+
+        movement_id = self._record_movement(r["vault_id"], v, "prediction", amt, just, target_address, market_id)
+
+        _PredictionMarketIface(Address(target_address)).emit(value=u256(amt), on="accepted").stake(
+            market_id, position, v["owner"]
+        )
+        return movement_id
 
     @gl.public.write.payable
     def challenge_movement(self, movement_id: str, reason: str) -> str:
@@ -416,6 +600,7 @@ class VaultManager(gl.Contract):
         m["status"] = "resolved"
         m["outcome"] = outcome
         m["ai_reasoning"] = reasoning
+        m["resolved_at"] = datetime.now(timezone.utc).isoformat()
         self.movements[movement_id] = json.dumps(m)
 
         for recipient, bond in bond_payouts:

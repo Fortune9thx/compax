@@ -22,11 +22,14 @@ export default function CreateCreditLinePage() {
 
   const [purpose, setPurpose] = useState("");
   const [collateral, setCollateral] = useState("");
+  const [termDays, setTermDays] = useState("30");
 
-  const canSubmit = purpose.trim().length > 10 && Number(collateral) > 0 && connected;
+  const canSubmit =
+    purpose.trim().length > 10 && Number(collateral) > 0 &&
+    Number(termDays) >= 1 && Number(termDays) <= 365 && connected;
 
   const submit = async () => {
-    const r = await run("CreditLine", "open_line", [purpose.trim()], BigInt(collateral));
+    const r = await run("CreditLine", "open_line", [purpose.trim(), Number(termDays)], BigInt(collateral));
     if (r.ok) setTimeout(() => router.push("/credit"), 1200);
   };
 
@@ -65,6 +68,15 @@ export default function CreateCreditLinePage() {
             You don&apos;t choose the loan amount - the AI sets a maximum loan-to-value and interest
             rate this collateral supports (always over-collateralized) from your purpose and live
             market conditions. Whatever it decides, that&apos;s the most any lender can fund.
+          </FieldHint>
+        </div>
+
+        <div>
+          <Label htmlFor="termDays">Repayment term (days)</Label>
+          <Input id="termDays" type="number" min={1} max={365} value={termDays} onChange={(e) => setTermDays(e.target.value)} placeholder="30" />
+          <FieldHint>
+            Starts counting from when a lender actually funds the line, not from now. The lender
+            cannot claim default before this many days have passed.
           </FieldHint>
         </div>
 
