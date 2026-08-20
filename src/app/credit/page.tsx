@@ -83,6 +83,7 @@ function CreditLineModal({ lineId, onClose, onChanged }: { lineId: string; onClo
 
   const [fundAmt, setFundAmt] = useState<string | null>(null);
   const [defaultEvidence, setDefaultEvidence] = useState("");
+  const [defaultEvidenceUrl, setDefaultEvidenceUrl] = useState("");
   const [rebuttal, setRebuttal] = useState("");
 
   if (!line?.id) return null;
@@ -106,8 +107,8 @@ function CreditLineModal({ lineId, onClose, onChanged }: { lineId: string; onClo
   };
   const doClaimDefault = async () => {
     if (!defaultEvidence.trim()) return;
-    const r = await run("CreditLine", "claim_default", [lineId, defaultEvidence.trim()]);
-    if (r.ok) { setDefaultEvidence(""); refresh(); }
+    const r = await run("CreditLine", "claim_default", [lineId, defaultEvidence.trim(), defaultEvidenceUrl.trim()]);
+    if (r.ok) { setDefaultEvidence(""); setDefaultEvidenceUrl(""); refresh(); }
   };
   const doDispute = async () => {
     if (!rebuttal.trim()) return;
@@ -166,6 +167,7 @@ function CreditLineModal({ lineId, onClose, onChanged }: { lineId: string; onClo
         {l.status === "funded" && isLender && (
           <div className="space-y-2 pt-2 border-t border-border">
             <Textarea value={defaultEvidence} onChange={(e) => setDefaultEvidence(e.target.value)} placeholder="Claim default - evidence the borrower is in default." rows={2} maxLength={600} charCount={defaultEvidence.length} />
+            <Input value={defaultEvidenceUrl} onChange={(e) => setDefaultEvidenceUrl(e.target.value)} placeholder="Evidence URL (optional, but fetched live and weighed as primary evidence)" />
             {dueDatePassed ? (
               <Button variant="danger" className="w-full" onClick={doClaimDefault} disabled={!defaultEvidence.trim() || state.phase === "deliberating"}>Claim default</Button>
             ) : (
@@ -179,6 +181,11 @@ function CreditLineModal({ lineId, onClose, onChanged }: { lineId: string; onClo
         {l.status === "default_claimed" && (
           <div className="space-y-3 pt-2 border-t border-border">
             <p className="text-xs text-text-secondary"><span className="text-warning">Lender&apos;s claim:</span> {l.default_evidence}</p>
+            {l.default_evidence_url && (
+              <a href={l.default_evidence_url} target="_blank" rel="noreferrer" className="block compax-mono text-[11px] text-accent-hover hover:underline truncate">
+                {l.default_evidence_url}
+              </a>
+            )}
             {isBorrower && (
               <>
                 <Textarea value={rebuttal} onChange={(e) => setRebuttal(e.target.value)} placeholder="Rebut the default claim." rows={2} maxLength={600} charCount={rebuttal.length} />
@@ -192,6 +199,11 @@ function CreditLineModal({ lineId, onClose, onChanged }: { lineId: string; onClo
         {l.status === "disputed" && (
           <div className="space-y-3 pt-2 border-t border-border">
             <p className="text-xs text-text-secondary"><span className="text-warning">Lender&apos;s claim:</span> {l.default_evidence}</p>
+            {l.default_evidence_url && (
+              <a href={l.default_evidence_url} target="_blank" rel="noreferrer" className="block compax-mono text-[11px] text-accent-hover hover:underline truncate">
+                {l.default_evidence_url}
+              </a>
+            )}
             <p className="text-xs text-text-secondary"><span className="text-accent-hover">Rebuttal:</span> {l.borrower_rebuttal}</p>
             <Button className="w-full" onClick={doResolveDefault} disabled={state.phase === "deliberating"}>Resolve</Button>
           </div>

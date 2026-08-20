@@ -130,6 +130,7 @@ class CreditLine(gl.Contract):
             "term_days": term_days,
             "due_date": "",
             "default_evidence": "",
+            "default_evidence_url": "",
             "borrower_rebuttal": "",
             "collateral_to_lender": 0,
             "collateral_to_borrower": 0,
@@ -215,7 +216,13 @@ class CreditLine(gl.Contract):
     # ── default → dispute → resolve ────────────────────────────────
 
     @gl.public.write
-    def claim_default(self, line_id: str, evidence: str) -> str:
+    def claim_default(self, line_id: str, evidence: str, evidence_url: str = "") -> str:
+        """evidence_url is optional but strongly preferred: a real,
+        independently-fetchable link (a public record, a screenshot host,
+        an on-chain explorer link, etc.) that resolve_default() actually
+        fetches live, rather than adjudicating purely on the lender's own
+        prose - the same evidentiary standard EscrowAdjudicator already
+        holds providers to."""
         line_id = _sanitize(line_id, 20)
         if line_id not in self.lines:
             raise gl.vm.UserError("line_not_found")
@@ -231,9 +238,11 @@ class CreditLine(gl.Contract):
         evidence = _sanitize(evidence, 600)
         if not evidence:
             raise gl.vm.UserError("evidence is required")
+        evidence_url = _sanitize(evidence_url, 300)
 
         l["status"] = "default_claimed"
         l["default_evidence"] = evidence
+        l["default_evidence_url"] = evidence_url
         self.lines[line_id] = json.dumps(l)
         return "default_claimed"
 
@@ -274,13 +283,29 @@ class CreditLine(gl.Contract):
         loan_amount = l["loan_amount"]
         purpose = l["purpose"]
         default_evidence = l["default_evidence"]
+        evidence_url = l.get("default_evidence_url") or ""
         rebuttal = l["borrower_rebuttal"] or "The borrower did not submit a rebuttal."
 
         # GenVM forbids more than one non-deterministic block reachable from
         # the same write method, and requires the leader function to be a
-        # named def, not an inline lambda - so the live fetch and the
+        # named def, not an inline lambda - so every live fetch and the
         # reasoning happen inside this single named function.
+        #
+        # Authoritative sourcing: if the lender supplied a real evidence URL
+        # with their claim, fetch it live and make it primary evidence -
+        # otherwise this adjudication would rest entirely on the lender's
+        # and borrower's own competing prose, which is exactly the "party-
+        # authored text" grounding gap this fix addresses.
         def _fetch_and_adjudicate() -> str:
+            if evidence_url.startswith("http"):
+                try:
+                    re = gl.nondet.web.get(evidence_url)
+                    evidence_data = re.body.decode("utf-8", errors="ignore")[:1200]
+                except Exception:
+                    evidence_data = "EVIDENCE_URL_FETCH_FAILED"
+            else:
+                evidence_data = "The lender did not provide a fetchable evidence URL."
+
             r = gl.nondet.web.get(
                 "https://api.coingecko.com/api/v3/simple/price"
                 "?ids=bitcoin,ethereum&vs_currencies=usd&include_24hr_change=true"
@@ -293,18 +318,23 @@ class CreditLine(gl.Contract):
                 f"[ORIGINAL PURPOSE]\n{purpose}\n"
                 f"[LOAN AMOUNT]\n{loan_amount} cGEN | [COLLATERAL]\n{collateral} cGEN\n"
                 f"[LENDER'S DEFAULT CLAIM]\n{default_evidence}\n"
+                f"[LIVE FETCH OF LENDER'S EVIDENCE URL - weigh this as the primary "
+                f"factual evidence when present, over either party's own prose]\n{evidence_data}\n"
                 f"[BORROWER'S REBUTTAL]\n{rebuttal}\n"
-                f"[LIVE MARKET CONTEXT]\n{market_data}\n"
+                f"[LIVE MARKET CONTEXT - secondary, only relevant if it bears on "
+                f"collateral value or timing]\n{market_data}\n"
                 f"[TASK]\nDecide how the {collateral} cGEN collateral splits "
                 f"between the lender and the borrower. A clear, undisputed "
                 f"default should favor the lender (up to the full collateral, "
-                f"covering the loan and a penalty). A weak claim or credible "
-                f"rebuttal should return more to the borrower. The two amounts "
+                f"covering the loan and a penalty). A weak claim, a credible "
+                f"rebuttal, or fetched evidence that contradicts the claim "
+                f"should return more to the borrower. The two amounts "
                 f"must sum to exactly {collateral}.\n"
                 f"Return ONLY valid JSON with no extra text: "
                 f'{{\"collateral_to_lender\": <int 0 to {collateral}>, '
                 f'\"collateral_to_borrower\": <int 0 to {collateral}>, '
-                f'\"reasoning\": \"<2-4 sentences citing the claim, the rebuttal, and market context>\"}}'
+                f'\"reasoning\": \"<2-4 sentences citing the fetched evidence if '
+                f'present, the claim, and the rebuttal>\"}}'
             )
 
         result_str = gl.eq_principle.prompt_non_comparative(

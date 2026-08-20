@@ -169,6 +169,7 @@ export interface VaultMovement {
 export interface VaultMovementChallenge {
   challenger: string;
   reason: string;
+  evidence_url: string;
   bond: number;
   refunded: boolean;
 }
@@ -217,6 +218,7 @@ export interface CreditLineData {
   term_days: number;
   due_date: string;
   default_evidence: string;
+  default_evidence_url: string;
   borrower_rebuttal: string;
   collateral_to_lender: number;
   collateral_to_borrower: number;

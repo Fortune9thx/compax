@@ -270,14 +270,15 @@ function MovementRow({ movement, isOwner, onChanged }: { movement: VaultMovement
   const { state, run, reset } = useDeliberation();
 
   const [reason, setReason] = useState("");
+  const [evidenceUrl, setEvidenceUrl] = useState("");
   const [bond, setBond] = useState("");
 
   const refresh = () => { refetchChallenges(); onChanged(); };
 
   const doChallenge = async () => {
     if (!reason.trim() || !bond) return;
-    const r = await run("VaultManager", "challenge_movement", [movement.id, reason.trim()], BigInt(bond));
-    if (r.ok) { setReason(""); setBond(""); refresh(); }
+    const r = await run("VaultManager", "challenge_movement", [movement.id, reason.trim(), evidenceUrl.trim()], BigInt(bond));
+    if (r.ok) { setReason(""); setEvidenceUrl(""); setBond(""); refresh(); }
   };
   const doResolve = async () => {
     const r = await run("VaultManager", "resolve_movement", [movement.id]);
@@ -316,6 +317,7 @@ function MovementRow({ movement, isOwner, onChanged }: { movement: VaultMovement
       {movement.status === "executed" && (
         <div className="mt-2 space-y-2">
           <Textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Challenge: why didn't this serve the mandate?" rows={2} maxLength={500} charCount={reason.length} />
+          <Input value={evidenceUrl} onChange={(e) => setEvidenceUrl(e.target.value)} placeholder="Evidence URL (optional, but fetched live and weighed as primary evidence)" />
           <div className="flex gap-2">
             <Input type="number" min={1} value={bond} onChange={(e) => setBond(e.target.value)} placeholder="Bond (cGEN)" />
             <Button size="sm" variant="secondary" onClick={doChallenge} disabled={!reason.trim() || !bond || !address || state.phase === "deliberating"}>Challenge</Button>
@@ -326,9 +328,16 @@ function MovementRow({ movement, isOwner, onChanged }: { movement: VaultMovement
       {movement.status === "challenged" && (
         <div className="mt-2 space-y-2">
           {challenges.map((c, i) => (
-            <p key={i} className="text-warning">
-              {c.bond.toLocaleString()} cGEN bond - {c.reason}
-            </p>
+            <div key={i}>
+              <p className="text-warning">
+                {c.bond.toLocaleString()} cGEN bond - {c.reason}
+              </p>
+              {c.evidence_url && (
+                <a href={c.evidence_url} target="_blank" rel="noreferrer" className="block compax-mono text-[10px] text-accent-hover hover:underline truncate">
+                  {c.evidence_url}
+                </a>
+              )}
+            </div>
           ))}
           <Button size="sm" onClick={doResolve} disabled={state.phase === "deliberating"}>Resolve</Button>
         </div>

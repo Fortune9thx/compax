@@ -471,11 +471,13 @@ class VaultManager(gl.Contract):
         return movement_id
 
     @gl.public.write.payable
-    def challenge_movement(self, movement_id: str, reason: str) -> str:
+    def challenge_movement(self, movement_id: str, reason: str, evidence_url: str = "") -> str:
         """Anyone can challenge a capital movement by posting a bond,
         arguing it didn't actually serve the vault's stated mandate.
         resolve_movement() weighs it - not a rubber stamp of the owner's
-        own justification."""
+        own justification. evidence_url is optional but strongly preferred:
+        a real, independently-fetchable link resolve_movement() actually
+        fetches live, rather than adjudicating purely on competing prose."""
         movement_id = _sanitize(movement_id, 20)
         if movement_id not in self.movements:
             raise gl.vm.UserError("movement_not_found")
@@ -488,11 +490,12 @@ class VaultManager(gl.Contract):
         reason = _sanitize(reason, 500)
         if not reason:
             raise gl.vm.UserError("challenge reason is required")
+        evidence_url = _sanitize(evidence_url, 300)
 
         challenger = str(gl.message.sender_address)
         count = int(self.movement_challenge_counts[movement_id]) if movement_id in self.movement_challenge_counts else 0
         self.movement_challenges[f"{movement_id}_{count}"] = json.dumps({
-            "challenger": challenger, "reason": reason, "bond": bond, "refunded": False,
+            "challenger": challenger, "reason": reason, "evidence_url": evidence_url, "bond": bond, "refunded": False,
         })
         self.movement_challenge_counts[movement_id] = str(count + 1)
 
@@ -523,18 +526,36 @@ class VaultManager(gl.Contract):
 
         challenge_count = int(self.movement_challenge_counts[movement_id]) if movement_id in self.movement_challenge_counts else 0
         challenge_texts = []
+        first_evidence_url = ""
         for i in range(challenge_count):
             key = f"{movement_id}_{i}"
             if key in self.movement_challenges:
                 c = json.loads(self.movement_challenges[key])
                 challenge_texts.append(f"- {c['challenger']}: {c['reason']}")
+                if not first_evidence_url and c.get("evidence_url"):
+                    first_evidence_url = c["evidence_url"]
         challenges_text = "\n".join(challenge_texts)[:1000] if challenge_texts else "No challenges were raised."
 
         # GenVM forbids more than one non-deterministic block reachable from
         # the same write method, and requires the leader function to be a
-        # named def, not an inline lambda - so the live fetch and the
+        # named def, not an inline lambda - so every live fetch and the
         # reasoning happen inside this single named function.
+        #
+        # Authoritative sourcing: if a challenger supplied a real evidence
+        # URL, fetch it live and make it primary evidence - otherwise this
+        # adjudication would rest entirely on the owner's justification vs.
+        # the challenger's prose, exactly the "party-authored text" grounding
+        # gap this fix addresses.
         def _fetch_and_adjudicate() -> str:
+            if first_evidence_url.startswith("http"):
+                try:
+                    ce = gl.nondet.web.get(first_evidence_url)
+                    challenge_evidence = ce.body.decode("utf-8", errors="ignore")[:1200]
+                except Exception:
+                    challenge_evidence = "EVIDENCE_URL_FETCH_FAILED"
+            else:
+                challenge_evidence = "No challenger provided a fetchable evidence URL."
+
             r = gl.nondet.web.get(
                 "https://api.coingecko.com/api/v3/simple/price"
                 "?ids=bitcoin,ethereum&vs_currencies=usd&include_24hr_change=true"
@@ -552,15 +573,19 @@ class VaultManager(gl.Contract):
                 f"[MOVEMENT]\n{amount} cGEN moved toward a {instrument} instrument\n"
                 f"[OWNER'S JUSTIFICATION FOR THIS MOVE]\n{justification}\n"
                 f"[CHALLENGES RAISED]\n{challenges_text}\n"
-                f"[LIVE MARKET CONTEXT]\n{market_data}\n"
+                f"[LIVE FETCH OF A CHALLENGER'S EVIDENCE URL - weigh this as "
+                f"primary factual evidence when present, over either side's own "
+                f"prose]\n{challenge_evidence}\n"
+                f"[LIVE MARKET CONTEXT - secondary]\n{market_data}\n"
                 f"[TASK]\nDecide \"compliant\" (this specific move genuinely served "
                 f"the stated objective) or \"violation\" (it did not - e.g. an "
                 f"objective committing to low risk being used to fund a much "
-                f"riskier instrument than the justification admits).\n"
+                f"riskier instrument than the justification admits, or fetched "
+                f"evidence contradicting the justification).\n"
                 f"Return ONLY valid JSON with no extra text: "
                 f'{{\"outcome\": \"compliant\"|\"violation\", '
-                f'\"reasoning\": \"<2-4 sentences citing the objective, the '
-                f'justification, and the live data>\"}}'
+                f'\"reasoning\": \"<2-4 sentences citing the fetched evidence if '
+                f'present, the objective, and the justification>\"}}'
             )
 
         result_str = gl.eq_principle.prompt_non_comparative(

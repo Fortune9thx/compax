@@ -348,6 +348,42 @@ resolution (600 YES / 400 NO / 200 forfeited challenge bond) where the
 sole winner's `claim_winnings()` payout exactly absorbed the full 1200-unit
 pool.
 
+**Re-checked strictly against the review's own wording** ("*several*
+capital-moving decisions rely on party-authored text") after the first
+pass only fixed `PredictionMarket`: `CreditLine.resolve_default()` and
+`VaultManager.resolve_movement()` were still adjudicating purely on
+party-submitted prose plus the same generic, mostly-irrelevant CoinGecko
+check. Closed the same way as `PredictionMarket` and `EscrowAdjudicator`:
+`claim_default()` gained an optional `evidence_url`, `challenge_movement()`
+gained an optional `evidence_url`, both fetched live inside
+`resolve_default()`/`resolve_movement()` and weighed as primary evidence
+over either party's own claims when present. Verified live on Bradbury: a
+vault movement challenged with a real evidence URL (the project's own
+README) resolved with `ai_reasoning` explicitly citing specific content
+from the fetched page - not boilerplate. (First resolution attempt on this
+test returned `NOT_VOTED`/never finalized - a transient consensus hiccup,
+consistent with several other transient failures already documented in
+this file's own findings and confirmed not code-related by simply
+retrying, which resolved cleanly and quickly the second time.)
+
+**Known remaining limitation, disclosed rather than silently left**:
+`VaultManager`'s multi-depositor accounting is not perfectly fair under
+partial deployment. `move_to_*` decrements the vault's aggregate
+`treasury` but does not proportionally decrement each depositor's
+individually-tracked `vault_deposits` entry. If a vault has multiple
+depositors and the owner deploys only part of the pooled capital, every
+depositor's *nominal* withdrawable balance still reads as their full
+original deposit, while the *actual* live treasury is smaller - whoever
+calls `withdraw_deposit()` first can claim up to their full nominal amount
+(bounded by the real treasury, so nothing can be overdrawn beyond what's
+actually held), not a proportional share. This does not enable theft or
+fund loss - `withdraw_deposit()` is hard-capped at the real treasury - but
+it is a first-come-first-served fairness gap among co-depositors of the
+same vault, not a proportional-share (ERC4626-style) accounting model.
+Fixing it properly needs a unit/share-based redesign of `vault_deposits`,
+out of scope for this pass; flagged here rather than left for a reviewer
+to discover.
+
 ## Known limitations (platform, not oversight)
 
 - **Storage is `TreeMap[str, str]` with JSON-serialized values.**

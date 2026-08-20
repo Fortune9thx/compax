@@ -23,9 +23,9 @@ export const NETWORK = {
 export const CONTRACTS = {
   ReputationRegistry: "0x2AA037b22C60A4B741bE0A327ab3fBF8111Aa654" as `0x${string}`,
   EscrowAdjudicator: "0xEbb35Ee78426f96D94826A8368cf233947AA3Ab0" as `0x${string}`,
-  VaultManager: "0x6603A01C16c1F865A33c36389F19D0537E94806d" as `0x${string}`,
+  VaultManager: "0xb751aF3959216f5A9abe149CD575Eb1eE873F06e" as `0x${string}`,
   PredictionMarket: "0xA94D7d2af016DC4A984546150C651b27d7fb5159" as `0x${string}`,
-  CreditLine: "0x961CDf9C1a870D1FCa71b7C31A54087bBaD71D67" as `0x${string}`,
+  CreditLine: "0x09e8d5C9DF87c61198a837fd9ffC6b08EfBf6759" as `0x${string}`,
 } as const;
 
 export type ContractName = keyof typeof CONTRACTS;
